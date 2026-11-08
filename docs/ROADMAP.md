@@ -22,6 +22,10 @@ Distilled from the research in [`docs/research/`](research) (pi, oh-my-pi, jcode
 - Repo map: zero-dependency symbol extraction (~15 languages) + personalized PageRank over the reference graph with query relevance; `read` outline mode and "definitions further down" hints.
 - Memory v3: `/promote` memories into AGENTS.md conventions (shareable via git); opt-in on-device MiniLM embeddings through ruvector with cached vectors.
 - Gateway round 2: Slack (Socket Mode) and Discord (Gateway + buttons) channels, owner vs. user roles, one-time pairing links + terminal QR, chat-managed jobs (/every, /daily, /jobs, /unjob) that can't spawn jobs, single-instance lock, `gateway users|revoke`.
+- Sandbox: bash runs under macOS Seatbelt / Linux bubblewrap (project-only writes, no network) outside full mode; `unsandboxed:true` escape needs approval; sandboxed commands skip approval in ask mode.
+- Guard modes enforced in code: freeze-tests, no-skip, strict-tdd (`/guard`, config `guards`).
+- Cost router: `fast`/`smart` tiers for subagents and background work.
+- Distribution: single-file binaries with the builtin library embedded, tagged release workflow, `install.sh` (checksum-verified), `rcode update`.
 - Frontends: TUI (scrollback-native, differential live region, completions, paste collapsing), print/JSON, JSONL RPC with approvals, ACP server.
 
 ## P0 — next
@@ -36,11 +40,9 @@ Distilled from the research in [`docs/research/`](research) (pi, oh-my-pi, jcode
 - tree-sitter WASM backend for the repo map (exact parsing where installed).
 - Session hibernation + daemon mode for many concurrent agents (jcode's architecture), file-touch bus across agents.
 - Beacon-compatible JSONL telemetry (local only) and a rule-based PreToolUse guard.
-- Guard modes (freeze-tests, no-skip, strict-tdd) as native policy, not just prompt text.
 - Optional headroom proxy integration (base-URL), lazy MCP tool loading (`discover_tools`).
 - Eval harness: replayable sessions, terminal-bench runner, deterministic graders, Wilson CIs.
-- Cost router: cheap-model first for subagents / summaries with escalation.
-- Sandboxing (macOS seatbelt / Linux bubblewrap) for bash in `auto-edit` mode.
+- Cost router v2: automatic escalation from fast → smart on failure.
 
 ## P2
 
