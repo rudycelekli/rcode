@@ -1,7 +1,7 @@
 ---
 name: test-engineer
 description: Writes and runs tests that would catch a wrong implementation (unit, property, integration, contract). Use for /tdd, /testgen, coverage gaps, or test fixes.
-tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, todo
+tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, todo, repo_map
 model: inherit
 ---
 

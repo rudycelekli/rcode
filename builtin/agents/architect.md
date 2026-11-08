@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Designs module boundaries, contracts, and data flow, and weighs options with explicit trade-offs. Use for new subsystems, cross-cutting changes, or ADR drafts.
-tools: read, grep, glob, ls, bash, recall, web_fetch
+tools: read, grep, glob, ls, bash, recall, web_fetch, repo_map
 model: inherit
 ---
 

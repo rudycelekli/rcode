@@ -104,7 +104,7 @@ export class AgentSession {
 
     if (!o.minimal) {
       if (this.config.memory?.enabled !== false && this.config.memory?.provider !== "off") {
-        getMemory((this.config.memory?.provider as any) ?? "auto").then(async (m) => {
+        getMemory((this.config.memory?.provider as any) ?? "auto", this.config.memory?.embeddings ?? "hash").then(async (m) => {
           this.memory = m;
           // Session-start memory is computed once so the system prompt stays cache-stable for the session.
           this.memoryBlock = await sessionMemoryBlock(m, this.cwd).catch(() => undefined);
@@ -152,7 +152,7 @@ export class AgentSession {
 
   /** All tools available to the main agent. */
   private buildTools(): Tool[] {
-    const memTools = this.opts.minimal || this.config.memory?.enabled === false ? [] : createMemoryTools(() => getMemory((this.config.memory?.provider as any) ?? "auto"), this.cwd);
+    const memTools = this.opts.minimal || this.config.memory?.enabled === false ? [] : createMemoryTools(() => getMemory((this.config.memory?.provider as any) ?? "auto", this.config.memory?.embeddings ?? "hash"), this.cwd);
     const task = createTaskTool({
       agents: () => this.agentDefs,
       maxDepth: 2,

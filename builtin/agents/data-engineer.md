@@ -1,7 +1,7 @@
 ---
 name: data-engineer
 description: Schemas, migrations, queries, and data pipelines: safe reversible migrations, index and query tuning, ETL correctness. Use for any database or pipeline change.
-tools: read, edit, write, bash, bash_output, grep, glob, ls, todo
+tools: read, edit, write, bash, bash_output, grep, glob, ls, todo, repo_map
 model: inherit
 ---
 

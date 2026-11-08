@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Tool } from "../agent/types.ts";
 import { RCODE_HOME } from "../session/store.ts";
 import { text } from "../tools/util.ts";
-import { FlatMemory } from "./flat.ts";
+import { FlatMemory, type SemanticEmbedder } from "./flat.ts";
 import { RuvectorMemory } from "./ruvector.ts";
 import type { MemoryProvider } from "./types.ts";
 
@@ -12,16 +12,31 @@ export type { MemoryProvider, MemoryItem, MemoryHit } from "./types.ts";
 let cached: Promise<MemoryProvider> | undefined;
 
 /** First healthy provider: ruvector (native HNSW) → flat (pure TS). */
-export function getMemory(pref: "auto" | "ruvector" | "flat" = "auto"): Promise<MemoryProvider> {
+/** ruvector on-device MiniLM (384d) — grounded in ruvector/src/core/onnx-embedder.ts (initOnnxEmbedder, embedQuery, embedPassage). First use downloads the model (~90MB) into ~/.rcode/models. */
+async function ruvectorEmbedder(): Promise<SemanticEmbedder | undefined> {
+  try {
+    const mod: any = await import("ruvector" as string);
+    const ok = await mod.initOnnxEmbedder?.({ cacheDir: join(RCODE_HOME, "models") });
+    if (!ok) return undefined;
+    return {
+      name: "minilm",
+      embedQuery: async (t) => Float32Array.from((await mod.embedQuery(t)).embedding),
+      embedPassage: async (t) => Float32Array.from((await mod.embedPassage(t)).embedding),
+    };
+  } catch { return undefined; }
+}
+
+export function getMemory(pref: "auto" | "ruvector" | "flat" = "auto", embeddings: "hash" | "onnx" = "hash"): Promise<MemoryProvider> {
   if (cached) return cached;
   const dir = join(RCODE_HOME, "memory");
   const file = join(dir, "memories.jsonl");
   cached = (async () => {
+    let m: FlatMemory | undefined;
     if (pref !== "flat") {
-      try { const m = new RuvectorMemory(file, dir); await m.init(); return m; } catch (e) { if (pref === "ruvector") console.error(`[rcode] ruvector unavailable (${(e as Error).message}); using flat memory`); }
+      try { const r = new RuvectorMemory(file, dir); await r.init(); m = r; } catch (e) { if (pref === "ruvector") console.error(`[rcode] ruvector unavailable (${(e as Error).message}); using flat memory`); }
     }
-    const m = new FlatMemory(file);
-    await m.init();
+    if (!m) { m = new FlatMemory(file); await m.init(); }
+    if (embeddings === "onnx") { const e = await ruvectorEmbedder(); if (e) await m.useSemantic(e); }
     return m;
   })();
   return cached;

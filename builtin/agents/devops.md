@@ -1,7 +1,7 @@
 ---
 name: devops
 description: CI/CD, containers, IaC, release automation, and environment config. Use to fix or write pipelines, Dockerfiles, deploy scripts, and infra code safely.
-tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, web_fetch, todo
+tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, web_fetch, todo, repo_map
 model: inherit
 ---
 

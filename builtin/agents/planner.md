@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Turns a fuzzy request into an ordered, verifiable implementation plan with acceptance criteria and risks. Use before multi-file changes. Read-only.
-tools: read, grep, glob, ls, bash, recall, task
+tools: read, grep, glob, ls, bash, recall, task, repo_map
 model: inherit
 ---
 

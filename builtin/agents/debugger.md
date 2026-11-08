@@ -1,7 +1,7 @@
 ---
 name: debugger
 description: Root-causes bugs by reproducing, then testing falsifiable hypotheses against real output. No fix before a confirmed cause. Use for failures, crashes, wrong output.
-tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, todo, recall
+tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, todo, recall, repo_map
 model: inherit
 ---
 

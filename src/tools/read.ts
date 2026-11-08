@@ -2,12 +2,14 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { extname } from "node:path";
 import { z } from "zod";
 import type { Tool } from "../agent/types.ts";
+import { outline as fileOutline } from "../context/repomap.ts";
 import { IMAGE_EXT, isBinary, markRead, MAX_BYTES, MAX_LINE_CHARS, MAX_LINES, resolvePath, text } from "./util.ts";
 
 const schema = z.object({
   path: z.string().describe("File path (absolute or relative to cwd), or an artifact://… reference from a shaped tool output. Supports a line selector suffix like 'src/a.ts:120-180' or 'src/a.ts:-50' (last 50 lines)."),
   offset: z.number().int().min(1).optional().describe("1-based line to start from"),
   limit: z.number().int().min(1).optional().describe("Max lines to return (default 2000)"),
+  outline: z.boolean().optional().describe("Return only the file's outline (definitions with line numbers) — cheap way to navigate big files"),
 });
 
 export const readTool: Tool<typeof schema> = {
@@ -44,7 +46,12 @@ export const readTool: Tool<typeof schema> = {
     const buf = readFileSync(abs);
     if (isBinary(buf)) return text(`${abs} is a binary file (${st.size} bytes). Use bash (e.g. xxd, file, strings) to inspect it.`, true);
     markRead(ctx, abs);
-    const all = buf.toString("utf8").replace(/^﻿/, "").split(/\r?\n/);
+    const srcText = buf.toString("utf8").replace(/^\uFEFF/, "");
+    if (args.outline) {
+      const o = fileOutline(abs, srcText);
+      return text(o ? `Outline of ${abs} (${srcText.split("\n").length} lines):\n${o}` : `No outline available for ${abs}; read it with offset/limit.`);
+    }
+    const all = srcText.split(/\r?\n/);
     if (all.length && all[all.length - 1] === "") all.pop();
     const total = all.length;
     if (total === 0) return text(`${abs} is empty.`);
@@ -63,7 +70,12 @@ export const readTool: Tool<typeof schema> = {
       out.push(row);
     }
     let footer = "";
-    if (i < total) footer = `\n[Showing lines ${start + 1}-${i} of ${total}. Continue with offset=${i + 1}.]`;
+    if (i < total) {
+      footer = `\n[Showing lines ${start + 1}-${i} of ${total}. Continue with offset=${i + 1}.]`;
+      // Navigation aid: definitions in the part not shown.
+      const rest = fileOutline(abs, srcText).split("\n").filter((l) => { const n = Number(l.match(/(\d+)│/)?.[1]); return n > i; });
+      if (rest.length && rest[0]) footer += `\n[Definitions further down:\n${rest.slice(0, 60).join("\n")}${rest.length > 60 ? `\n… ${rest.length - 60} more` : ""}]`;
+    }
     else if (start > 0) footer = `\n[Lines ${start + 1}-${total} of ${total}.]`;
     return text(out.join("\n") + footer, false, { path: abs, lines: total });
   },

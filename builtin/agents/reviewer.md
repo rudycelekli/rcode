@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Evidence-based code reviewer for diffs and modules; also acts as a blind refuter of other findings. Use for /review, /court, or any second opinion. Read-only.
-tools: read, grep, glob, ls, bash
+tools: read, grep, glob, ls, bash, repo_map
 model: inherit
 ---
 

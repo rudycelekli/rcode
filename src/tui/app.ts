@@ -29,7 +29,7 @@ const BUILTINS: Array<[string, string]> = [
   ["mode", "Approval mode: ask|auto-edit|full|plan"], ["plan", "Toggle plan mode (read-only)"], ["goal", "Set a goal the agent must reach before stopping"],
   ["compact", "Summarize older context: /compact [focus]"], ["new", "Start a fresh session"], ["resume", "Resume a recent session"], ["fork", "Fork this session into a new branch file"],
   ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["context", "Where the context window goes (by section, tool, message type)"], ["mcp", "MCP server status"],
-  ["memory", "Search memory: /memory <query>"], ["remember", "Save a memory: /remember <text>"], ["forget", "Delete a memory: /forget <id>"], ["tools", "List available tools"], ["skills", "List skills"],
+  ["memory", "Search memory: /memory <query>"], ["remember", "Save a memory: /remember <text>"], ["forget", "Delete a memory: /forget <id>"], ["promote", "Promote memories to AGENTS.md: /promote <id…>"], ["tools", "List available tools"], ["skills", "List skills"],
   ["agents", "List subagent types"], ["commands", "List slash commands"], ["export", "Export transcript to markdown"], ["copy", "Copy last answer to clipboard"], ["clear", "Clear screen"], ["quit", "Exit"],
 ];
 
@@ -301,6 +301,16 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
         if (!m) { say(a.gray("memory not ready")); return true; }
         const items = arg ? (await m.search(arg, { k: 10, project: session.cwd })).map((h) => h.item) : await m.list({ project: session.cwd, limit: 15 });
         say(items.length ? items.map((i) => `  ${a.gray(i.id)} ${i.text}`).join("\n") : a.gray("  no memories")); return true;
+      }
+      case "promote": {
+        if (!session.memory || !arg) { say(a.gray("usage: /promote <memory-id> [more ids…]  (ids from /memory)")); return true; }
+        const all = await session.memory.list({ limit: 100000 });
+        const picked = arg.split(/\s+/).map((id) => all.find((m) => m.id === id)).filter(Boolean) as any[];
+        if (!picked.length) { say(a.red("no matching memory ids")); return true; }
+        const { promoteToAgentsMd } = await import("../memory/promote.ts");
+        const r = promoteToAgentsMd(session.cwd, picked.map((p) => p.text));
+        say(a.gray(r.added ? `added ${r.added} convention(s) to ${r.file.replace(session.cwd + "/", "")} — commit it to share with your team` : "already present"));
+        return true;
       }
       case "forget": if (arg && session.memory) say(a.gray((await session.memory.remove(arg)) ? `forgot ${arg}` : `no memory ${arg}`)); return true;
       case "remember": if (arg && session.memory) { await session.memory.add({ text: arg, scope: "project", project: session.cwd, kind: "fact", source: "user" }); say(a.gray("remembered")); } return true;

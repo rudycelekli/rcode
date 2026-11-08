@@ -28,11 +28,31 @@ export function hashEmbed(s: string, dim = 512): Float32Array {
 }
 const cos = (a: Float32Array, b: Float32Array) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i]! * b[i]!; return s; };
 
+/** Optional semantic embedder (e.g. ruvector's on-device MiniLM). Vectors are cached on disk by item id. */
+export interface SemanticEmbedder { name: string; embedQuery(t: string): Promise<Float32Array>; embedPassage(t: string): Promise<Float32Array> }
+
 export class FlatMemory implements MemoryProvider {
-  readonly name: string = "flat";
+  name: string = "flat";
   private items = new Map<string, MemoryItem>();
   private vecs = new Map<string, Float32Array>();
+  private sem = new Map<string, Float32Array>();
+  semantic?: SemanticEmbedder;
   constructor(private file: string) {}
+
+  /** Attach a semantic embedder; embeds missing items in the background. */
+  async useSemantic(e: SemanticEmbedder) {
+    this.semantic = e;
+    this.name = `${this.name}+${e.name}`;
+    const vf = this.file.replace(/\.jsonl$/, ".vec.jsonl");
+    if (existsSync(vf)) for (const l of readFileSync(vf, "utf8").split("\n")) { if (!l) continue; try { const r = JSON.parse(l); this.sem.set(r.id, Float32Array.from(r.v)); } catch {} }
+    for (const it of this.items.values()) if (!this.sem.has(it.id)) await this.embedItem(it).catch(() => {});
+  }
+  private async embedItem(it: MemoryItem) {
+    if (!this.semantic) return;
+    const v = await this.semantic.embedPassage(it.text);
+    this.sem.set(it.id, v);
+    appendFileSync(this.file.replace(/\.jsonl$/, ".vec.jsonl"), JSON.stringify({ id: it.id, v: Array.from(v, (x) => Math.round(x * 1e5) / 1e5) }) + "\n");
+  }
 
   async init() {
     if (!existsSync(this.file)) return;
@@ -60,12 +80,14 @@ export class FlatMemory implements MemoryProvider {
     this.items.set(item.id, item);
     this.vecs.set(item.id, v);
     this.append(item);
+    void this.embedItem(item).catch(() => {});
     return item;
   }
 
   async search(query: string, opts: { k?: number; project?: string; minScore?: number } = {}): Promise<MemoryHit[]> {
     const k = opts.k ?? 8;
     const qv = hashEmbed(query);
+    const qs = this.semantic ? await this.semantic.embedQuery(query).catch(() => undefined) : undefined;
     const qt = tokenize(query);
     const pool = [...this.items.values()].filter((i) => i.scope === "global" || !opts.project || i.project === opts.project);
     if (!pool.length) return [];
@@ -84,7 +106,8 @@ export class FlatMemory implements MemoryProvider {
         const idf = Math.log(1 + (N - (df.get(t) ?? 0) + 0.5) / ((df.get(t) ?? 0) + 0.5));
         bm += idf * ((f * 2.2) / (f + 1.2 * (0.25 + 0.75 * (d.length / avg))));
       }
-      const vs = cos(qv, this.vecs.get(item.id)!);
+      const sv = qs && this.sem.get(item.id);
+      const vs = sv ? 0.75 * cos(qs!, sv) + 0.25 * cos(qv, this.vecs.get(item.id)!) : cos(qv, this.vecs.get(item.id)!);
       const recency = Math.exp(-(Date.now() - item.createdAt) / (1000 * 60 * 60 * 24 * 90)) * 0.05;
       return { item, score: 0.55 * vs + 0.45 * Math.tanh(bm / 6) + recency + (item.score ?? 0) * 0.02 };
     });

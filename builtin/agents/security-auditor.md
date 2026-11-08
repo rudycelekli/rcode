@@ -1,7 +1,7 @@
 ---
 name: security-auditor
 description: Application security reviewer: threat models, traces untrusted input to sinks, checks authz, secrets, and dependencies. Use for /security or risky diffs. Read-only.
-tools: read, grep, glob, ls, bash, web_fetch
+tools: read, grep, glob, ls, bash, web_fetch, repo_map
 model: inherit
 ---
 

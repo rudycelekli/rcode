@@ -31,7 +31,7 @@ export interface RcodeConfig {
   mcpServers?: Record<string, McpServerConfig>;
   hooks?: HookConfig[];
   compaction?: { enabled?: boolean; reserveTokens?: number; keepRecentTokens?: number };
-  memory?: { enabled?: boolean; provider?: "auto" | "ruvector" | "flat" | "off"; autoCapture?: boolean; maxInject?: number };
+  memory?: { enabled?: boolean; provider?: "auto" | "ruvector" | "flat" | "off"; autoCapture?: boolean; maxInject?: number; /** "onnx" = on-device MiniLM via ruvector (downloads ~90MB once). Default "hash". */ embeddings?: "hash" | "onnx" };
   ruvnet?: { ruflo?: boolean; brain?: boolean };
   maxTurns?: number;
   /** Nudge the agent to verify (or admit it didn't) after editing files. Default true. */

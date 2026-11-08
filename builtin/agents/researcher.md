@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Answers technical questions from primary web sources and the repo with graded evidence: library choice, API behavior, versions, prior art. Read-only.
-tools: web_fetch, read, grep, glob, ls, bash, recall
+tools: web_fetch, read, grep, glob, ls, bash, recall, repo_map
 model: inherit
 ---
 

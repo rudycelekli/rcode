@@ -1,7 +1,7 @@
 ---
 name: frontend-specialist
 description: Builds and fixes UI components with accessibility, state, and rendering performance in mind, matching the project's framework and design system. Use for UI work.
-tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, web_fetch, todo
+tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, web_fetch, todo, repo_map
 model: inherit
 ---
 

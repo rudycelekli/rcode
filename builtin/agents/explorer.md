@@ -1,7 +1,7 @@
 ---
 name: explorer
 description: Fast read-only codebase search. Use to locate code, trace a flow, or map a directory when you need the conclusion, not the file dumps. Never edits.
-tools: read, grep, glob, ls, recall
+tools: read, grep, glob, ls, recall, repo_map
 model: inherit
 ---
 

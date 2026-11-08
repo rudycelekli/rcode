@@ -1,7 +1,7 @@
 ---
 name: refactorer
 description: Changes structure without changing behavior, in small always-green steps with tests frozen as the oracle. Use for extract/inline/rename/move work and debt paydown.
-tools: read, edit, write, bash, bash_output, grep, glob, ls, todo
+tools: read, edit, write, bash, bash_output, grep, glob, ls, todo, repo_map
 model: inherit
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: performance-engineer
 description: Measures first, profiles to find hotspots, changes one thing at a time, keeps only wins that beat noise. Use for latency, throughput, memory, bundle size.
-tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, todo
+tools: read, edit, write, bash, bash_output, bash_kill, grep, glob, ls, todo, repo_map
 model: inherit
 ---
 

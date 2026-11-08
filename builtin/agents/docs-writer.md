@@ -1,7 +1,7 @@
 ---
 name: docs-writer
 description: Writes and refreshes docs that are true: examples run, flags match the code, numbers come from commands. Use for READMEs, API docs, guides, changelogs.
-tools: read, edit, write, bash, grep, glob, ls
+tools: read, edit, write, bash, grep, glob, ls, repo_map
 model: inherit
 ---
 
