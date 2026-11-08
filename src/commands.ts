@@ -37,7 +37,7 @@ export async function runSubcommand(sub: string, args: string[], flags: Record<s
     }
     case "login": {
       const provider = args[0];
-      if (!provider || !PROVIDERS[provider]) { console.log(`Usage: rcode login <provider> [key]\nProviders: ${Object.keys(PROVIDERS).join(", ")}`); return 2; }
+      if (!provider || (!PROVIDERS[provider] && provider !== "telegram")) { console.log(`Usage: rcode login <provider> [key]\nProviders: ${Object.keys(PROVIDERS).join(", ")}`); return 2; }
       let key = args[1];
       if (!key) { const rl = createInterface({ input: process.stdin, output: process.stdout }); key = (await rl.question(`${provider} API key: `)).trim(); rl.close(); }
       if (!key) return 2;
@@ -47,6 +47,7 @@ export async function runSubcommand(sub: string, args: string[], flags: Record<s
     }
     case "doctor": return doctor(cwd);
     case "setup": return setup(cwd);
+    case "gateway": return gateway(args, flags, cwd);
     case "acp": { const { runAcp } = await import("./modes/acp.ts"); return runAcp({ cwd, model: flags.model, minimal: flags.minimal }); }
     case "mcp": {
       const cfg = loadConfig(cwd);
@@ -130,5 +131,50 @@ async function setup(cwd: string): Promise<number> {
   br ? ok("ruvnet-brain detected — RuvNet-grounded answers enabled") : console.log(c.dim("  · ruvnet-brain: npx ruvnet-brain  (source-grounded RuvNet knowledge)"));
   rl.close();
   console.log(`\n${c.green("Ready.")} Run ${c.bold("rcode")} to start, or ${c.bold("rcode doctor")} to verify.\n`);
+  return 0;
+}
+
+async function gateway(args: string[], flags: Record<string, any>, cwd: string): Promise<number> {
+  const { runGateway, pairCode } = await import("./gateway/server.ts");
+  const sub = args[0];
+  if (sub === "pair") {
+    const who = args[1] ? pairCode(args[1]) : undefined;
+    console.log(who ? `Paired ${who}. They can now message your rcode bot.` : "Unknown or expired code.");
+    return who ? 0 : 1;
+  }
+  if (sub === "install" || sub === "uninstall") return serviceInstall(sub, cwd);
+  return runGateway({ cwd, model: flags.model, web: !flags["no-web"], port: flags.port ? Number(flags.port) : undefined, host: flags.host, mode: flags.plan ? "plan" : undefined });
+}
+
+async function serviceInstall(action: "install" | "uninstall", cwd: string): Promise<number> {
+  const { homedir } = await import("node:os");
+  const { writeFileSync, rmSync, mkdirSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const bun = process.execPath;
+  const cli = new URL("./cli.ts", import.meta.url).pathname;
+  if (process.platform === "darwin") {
+    const plist = join(homedir(), "Library", "LaunchAgents", "dev.rcode.gateway.plist");
+    if (action === "uninstall") { Bun.spawnSync(["launchctl", "unload", plist]); rmSync(plist, { force: true }); console.log("Removed launchd service."); return 0; }
+    mkdirSync(join(homedir(), "Library", "LaunchAgents"), { recursive: true });
+    writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>dev.rcode.gateway</string>
+<key>ProgramArguments</key><array><string>${bun}</string><string>${cli}</string><string>gateway</string><string>--cwd</string><string>${cwd}</string></array>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+<key>StandardOutPath</key><string>${RCODE_HOME}/gateway.log</string><key>StandardErrorPath</key><string>${RCODE_HOME}/gateway.log</string>
+<key>EnvironmentVariables</key><dict><key>PATH</key><string>${process.env.PATH}</string></dict>
+</dict></plist>`);
+    Bun.spawnSync(["launchctl", "load", "-w", plist]);
+    console.log(`Installed launchd service (logs: ${RCODE_HOME}/gateway.log).`);
+    return 0;
+  }
+  const unit = join(homedir(), ".config", "systemd", "user", "rcode-gateway.service");
+  if (action === "uninstall") { Bun.spawnSync(["systemctl", "--user", "disable", "--now", "rcode-gateway"]); rmSync(unit, { force: true }); console.log("Removed systemd user service."); return 0; }
+  mkdirSync(join(homedir(), ".config", "systemd", "user"), { recursive: true });
+  writeFileSync(unit, `[Unit]\nDescription=rcode gateway\nAfter=network-online.target\n\n[Service]\nExecStart=${bun} ${cli} gateway --cwd ${cwd}\nRestart=always\nEnvironment=PATH=${process.env.PATH}\n\n[Install]\nWantedBy=default.target\n`);
+  Bun.spawnSync(["systemctl", "--user", "daemon-reload"]);
+  Bun.spawnSync(["systemctl", "--user", "enable", "--now", "rcode-gateway"]);
+  console.log("Installed systemd user service: systemctl --user status rcode-gateway");
   return 0;
 }

@@ -29,7 +29,8 @@ Usage:
   rcode doctor                   Health check of providers, tools, MCP, memory
   rcode models [--refresh]       List models (refresh pricing from models.dev)
   rcode sessions                 List recent sessions for this directory
-  rcode login <provider> [key]   Store an API key (anthropic, openai, google, openrouter, …)
+  rcode login <provider> [key]   Store an API key (anthropic, openai, google, openrouter, telegram, …)
+  rcode gateway                  Talk to rcode from your phone: Telegram + web UI (pair/install/uninstall)
 
 Options:
   -m, --model <ref>              provider/model or alias (opus, sonnet, haiku, gpt5, gemini, ollama/qwen3-coder)
@@ -67,7 +68,7 @@ async function main() {
       continue: { type: "boolean", short: "c" }, resume: { type: "string", short: "r" },
       plan: { type: "boolean" }, yes: { type: "boolean", short: "y" }, "auto-edit": { type: "boolean" },
       tools: { type: "string" }, minimal: { type: "boolean" }, "no-session": { type: "boolean" },
-      cwd: { type: "string" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
+      cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
       version: { type: "boolean", short: "v" }, help: { type: "boolean", short: "h" },
     },
   });
@@ -78,7 +79,7 @@ async function main() {
   ensureHome();
 
   const sub = positionals[0];
-  if (sub && ["setup", "doctor", "models", "sessions", "login", "acp", "mcp"].includes(sub) && !values.print) {
+  if (sub && ["setup", "doctor", "models", "sessions", "login", "acp", "mcp", "gateway"].includes(sub) && !values.print) {
     const { runSubcommand } = await import("./commands.ts");
     return runSubcommand(sub, positionals.slice(1), values as any, cwd);
   }
