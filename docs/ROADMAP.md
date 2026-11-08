@@ -13,11 +13,15 @@ Distilled from the research in [`docs/research/`](research) (pi, oh-my-pi, jcode
 - Built-in library: 31 workflows (`/plan /goal /tdd /debug /review /court /verify /security /ddd /adr /sparc /research /premortem /refactor /perf /migrate /qe /flaky /testgen /impact /explain /onboard /docs /commit /pr /release /retro /skillify /ontology /repair /init`), 14 agents, 6 skills.
 - Memory: hybrid BM25 + hashed-vector flat store, optional ruvector HNSW, per-prompt injection.
 - RuvNet: auto-detected ruflo (allowlisted MCP + learning hooks) and ruvnet-brain (grounded context).
+- Context efficiency: content-addressed artifact store (`artifact://`), type-aware output shaping (errors + head/tail, JSON condensing, progress-bar cleanup), stale-output masking, cache-stable prompt layout, two rolling cache breakpoints.
+- Browser & desktop: `browser` (agent-browser) and `desktop` (agent-desktop) tools with per-action permissions and secret guards; skills; setup installs them.
+- Remote: `rcode gateway` — Telegram (pairing, approval buttons, streaming edits) + token-protected web UI, per-conversation sessions, chat commands, schedules, launchd/systemd service.
 - Frontends: TUI (scrollback-native, differential live region, completions, paste collapsing), print/JSON, JSONL RPC with approvals, ACP server.
 
 ## P0 — next
 
-- **Context efficiency** (context-efficiency.md): artifact store (`artifact://` instead of temp spill), type-aware output shaping (logs/grep/diff/JSON), stale-read masking via `transformContext`, `/context` breakdown with calibrated token counts, second cache breakpoint.
+- **Context efficiency, round 2**: `/context` breakdown with calibrated token counts, repo map, lazy MCP tool loading.
+- **Gateway, round 2** (remote-gateway.md): owner vs. user roles, `rcode gateway link` one-tap pairing (t.me deep link + QR), Slack (Socket Mode) and Discord channels, voice notes, control socket + single-instance lock, cron jobs that cannot schedule more cron jobs.
 - **Memory v2** (ecosystem-a.md, after claude-mem): background observer capturing typed observations from tool events, budgeted session-start injection, progressive-disclosure tools (search → timeline → get), review-gated lesson promotion to skills.
 - **Verified-done gate**: the agent can't claim completion after edits without a verification run (tests/typecheck) or an explicit "unverified" statement.
 - **Git checkpoints** (t3code-style hidden refs) so `/undo` also covers bash-made changes.
