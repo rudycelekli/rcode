@@ -1,0 +1,8 @@
+node_modules/
+dist/
+reference/
+.rcode/
+*.log
+.DS_Store
+.claude-flow/
+.swarm/

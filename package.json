@@ -1,0 +1,32 @@
+{
+  "name": "rcode",
+  "version": "0.1.0",
+  "description": "rcode — the open, fast, extensible coding agent. Terminal-first, any model, MCP-native, with built-in memory and multi-agent orchestration.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "rcode": "./bin/rcode.ts"
+  },
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build --compile --minify src/cli.ts --outfile dist/rcode"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "4"
+  },
+  "devDependencies": {
+    "bun-types": "^1.4.4",
+    "typescript": "^7.0.2"
+  }
+}
