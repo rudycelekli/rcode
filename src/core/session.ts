@@ -21,6 +21,8 @@ import { coreTools, filterTools } from "../tools/index.ts";
 import { createTaskTool } from "../tools/task.ts";
 import { killAllJobs } from "../tools/bash.ts";
 import { maskStale } from "../context/prune.ts";
+import { VerifyGate } from "./verify-gate.ts";
+import { Checkpoints } from "./checkpoints.ts";
 import { RuvnetIntegration } from "../integrations/ruvnet.ts";
 
 export interface SessionOptions {
@@ -64,6 +66,8 @@ export class AgentSession {
   private envBlock = "";
   private toolsDirty = false;
   private turn = 0;
+  readonly verifyGate = new VerifyGate();
+  checkpoints?: Checkpoints;
 
   constructor(readonly opts: SessionOptions) {}
 
@@ -110,6 +114,7 @@ export class AgentSession {
       }
     }
 
+    this.checkpoints = new Checkpoints(o.cwd, this.session.id, this.config.checkpoints !== false && !o.ephemeral);
     this.agent = new Agent({
       model: this.model,
       apiKey: apiKeyFor(this.model, this.auth),
@@ -184,6 +189,7 @@ export class AgentSession {
       afterToolCall: async (c) => {
         if (this.hooks.has("PostToolUse")) await this.hooks.run("PostToolUse", { session_id: this.session.id, tool_name: c.tool.name, tool_input: c.args, tool_response: c.result.content.map((x) => (x.type === "text" ? x.text : "[image]")).join("").slice(0, 20000) }, c.tool.name);
         this.ruvnet?.afterTool(c.tool.name, c.args, !c.result.isError);
+        this.verifyGate.onTool(c.tool.name, c.args, !!c.result.isError);
       },
       maybeCompact: async (messages, lastUsage) => {
         if (this.compacting) return;
@@ -192,10 +198,15 @@ export class AgentSession {
       onContextOverflow: async () => { try { await this.compact(); return true; } catch { return false; } },
       getSteering: () => this.steerQ.splice(0),
       getFollowUp: () => this.followQ.splice(0),
-      onStop: async () => {
+      onStop: async (messages) => {
         if (this.hooks.has("Stop")) {
           const r = await this.hooks.run("Stop", { session_id: this.session.id });
           if (r.block) return r.block;
+        }
+        if (this.policy.mode !== "plan" && this.config.verifyGate !== false) {
+          const last = [...messages].reverse().find((m) => m.role === "assistant");
+          const text = last?.role === "assistant" ? last.content.filter((c) => c.type === "text").map((c: any) => c.text).join("") : "";
+          return this.verifyGate.check(text);
         }
         return undefined;
       },
@@ -225,6 +236,8 @@ export class AgentSession {
     if (!this.session.title) this.session.setMeta({ title: input.slice(0, 80), model: `${this.model.provider}/${this.model.id}` });
     if (this.toolsDirty) this.refreshTools();
     this.agent.state.set("turn", ++this.turn);
+    this.checkpoints?.snapshot(this.turn);
+    this.verifyGate.reset();
     await this.agent.prompt(parts);
     if (this.toolsDirty) this.refreshTools();
     this.ruvnet?.afterPrompt(input, this.agent.messages);
@@ -250,7 +263,15 @@ export class AgentSession {
   setGoal(goal?: string) { this.goal = goal; }
 
   /** Revert file changes made by edit/write during the most recent turn that changed files. */
-  undo(): { turn: number; files: string[] } | undefined {
+  undo(): { turn: number; files: string[]; via: "git" | "history" } | undefined {
+    // Prefer git checkpoints (cover bash-made changes too); fall back to edit/write pre-images.
+    const viaGit = this.checkpoints?.undo();
+    if (viaGit) {
+      const h0 = this.agent.state.get("fileHistory") as Array<{ turn: number }> | undefined;
+      if (h0) this.agent.state.set("fileHistory", h0.filter((x) => x.turn < viaGit.turn));
+      (this.agent.state.get("reads") as Map<string, unknown> | undefined)?.clear();
+      return { ...viaGit, via: "git" };
+    }
     const h = this.agent.state.get("fileHistory") as Array<{ turn: number; path: string; content: string | null }> | undefined;
     if (!h?.length) return undefined;
     const turn = h[h.length - 1]!.turn;
@@ -260,7 +281,7 @@ export class AgentSession {
     }
     this.agent.state.set("fileHistory", h.filter((x) => x.turn !== turn));
     (this.agent.state.get("reads") as Map<string, unknown> | undefined)?.clear();
-    return { turn, files: snaps.map((s) => s.path) };
+    return { turn, files: snaps.map((s) => s.path), via: "history" };
   }
 
   async compact(focus?: string): Promise<void> {

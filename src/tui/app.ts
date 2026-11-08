@@ -275,7 +275,7 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
       }
       case "undo": {
         const r = session.undo();
-        say(r ? a.gray(`reverted ${r.files.length} file(s): ${r.files.map((f) => f.replace(session.cwd + "/", "")).join(", ")}\n  (changes made via bash are not tracked)`) : a.gray("nothing to undo"));
+        say(r ? a.gray(`reverted ${r.files.length} file(s): ${r.files.slice(0, 20).map((f) => f.replace(session.cwd + "/", "")).join(", ")}${r.via === "history" ? "\n  (not a git repo: only edit/write changes are tracked, not bash)" : ""}`) : a.gray("nothing to undo"));
         return true;
       }
       case "fork": say(a.gray(`forked → ${session.fork()}`)); return true;

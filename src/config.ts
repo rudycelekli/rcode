@@ -34,6 +34,10 @@ export interface RcodeConfig {
   memory?: { enabled?: boolean; provider?: "auto" | "ruvector" | "flat" | "off"; autoCapture?: boolean; maxInject?: number };
   ruvnet?: { ruflo?: boolean; brain?: boolean };
   maxTurns?: number;
+  /** Nudge the agent to verify (or admit it didn't) after editing files. Default true. */
+  verifyGate?: boolean;
+  /** Snapshot the git worktree before each prompt (hidden refs) so /undo also reverts bash changes. Default true. */
+  checkpoints?: boolean;
   /** Force optional tools on/off (default: on when their native CLI is installed). */
   tools?: { browser?: boolean; desktop?: boolean };
   theme?: string;
