@@ -37,7 +37,7 @@ export async function runSubcommand(sub: string, args: string[], flags: Record<s
     }
     case "login": {
       const provider = args[0];
-      if (!provider || (!PROVIDERS[provider] && provider !== "telegram")) { console.log(`Usage: rcode login <provider> [key]\nProviders: ${Object.keys(PROVIDERS).join(", ")}`); return 2; }
+      if (!provider || (!PROVIDERS[provider] && !["telegram", "slack", "slack-app", "discord"].includes(provider))) { console.log(`Usage: rcode login <provider> [key]\nProviders: ${Object.keys(PROVIDERS).join(", ")}\nChannels: telegram, slack (xoxb-), slack-app (xapp-), discord`); return 2; }
       let key = args[1];
       if (!key) { const rl = createInterface({ input: process.stdin, output: process.stdout }); key = (await rl.question(`${provider} API key: `)).trim(); rl.close(); }
       if (!key) return 2;
@@ -154,14 +154,58 @@ async function setup(cwd: string): Promise<number> {
 }
 
 async function gateway(args: string[], flags: Record<string, any>, cwd: string): Promise<number> {
-  const { runGateway, pairCode } = await import("./gateway/server.ts");
   const sub = args[0];
+  const st = await import("./gateway/state.ts");
   if (sub === "pair") {
-    const who = args[1] ? pairCode(args[1]) : undefined;
-    console.log(who ? `Paired ${who}. They can now message your rcode bot.` : "Unknown or expired code.");
-    return who ? 0 : 1;
+    const r = args[1] ? st.pairCode(args[1], flags.user ? "user" : "owner") : undefined;
+    console.log(r ? `Paired ${r.who} on ${r.channel} as ${flags.user ? "user (chat only)" : "owner"}.` : "Unknown or expired code.");
+    return r ? 0 : 1;
+  }
+  if (sub === "link") {
+    const role = flags.user ? "user" : "owner";
+    const tok = st.createLinkToken(role);
+    const tg = process.env.TELEGRAM_BOT_TOKEN ?? loadAuth().telegram ?? (loadConfig(cwd) as any).gateway?.telegram?.token;
+    let url: string | undefined;
+    if (tg) {
+      try { const me: any = await (await fetch(`https://api.telegram.org/bot${tg}/getMe`)).json(); if (me.ok) url = `https://t.me/${me.result.username}?start=${tok}`; } catch {}
+    }
+    console.log(c.bold(`One-time pairing link (${role}, valid 15 minutes):`));
+    if (url) {
+      console.log(`\n  ${c.cyan(url)}\n`);
+      try { const qr: any = (await import("qrcode-terminal")).default; qr.generate(url, { small: true }, (q: string) => console.log(q)); } catch {}
+      console.log(c.dim("Scan with your phone camera, then tap Start in Telegram."));
+    }
+    console.log(c.dim(`Slack / Discord: DM the bot:  pair ${tok}`));
+    return 0;
+  }
+  if (sub === "users") {
+    const s = st.loadState();
+    let n = 0;
+    for (const [ch, us] of Object.entries(s.users)) for (const [id, u] of Object.entries(us)) { n++; console.log(`${ch.padEnd(9)} ${id.padEnd(22)} ${u.role.padEnd(6)} ${u.name ?? ""} ${c.dim(new Date(u.since).toLocaleDateString())}`); }
+    if (!n) console.log("No paired users yet. Run: rcode gateway link");
+    return 0;
+  }
+  if (sub === "revoke") {
+    const ok = args[1] && args[2] ? st.removeUser(args[1], args[2]) : false;
+    console.log(ok ? "Revoked." : "Usage: rcode gateway revoke <channel> <userId>   (see: rcode gateway users)");
+    return ok ? 0 : 1;
   }
   if (sub === "install" || sub === "uninstall") return serviceInstall(sub, cwd);
+  if (sub === "help" || flags.help) {
+    console.log(`rcode gateway — talk to rcode from your phone and chat apps
+
+  rcode gateway                 start (web UI always; Telegram/Slack/Discord when tokens are set)
+  rcode gateway link [--user]   one-tap pairing link + QR (owner by default)
+  rcode gateway pair <CODE> [--user]   approve a pairing code a user received
+  rcode gateway users | revoke <channel> <id>
+  rcode gateway install | uninstall    run as a background service (launchd / systemd)
+
+Tokens:  rcode login telegram <bot-token>
+         rcode login slack <xoxb-bot-token> ; rcode login slack-app <xapp-app-token>
+         rcode login discord <bot-token>`);
+    return 0;
+  }
+  const { runGateway } = await import("./gateway/server.ts");
   return runGateway({ cwd, model: flags.model, web: !flags["no-web"], port: flags.port ? Number(flags.port) : undefined, host: flags.host, mode: flags.plan ? "plan" : undefined });
 }
 

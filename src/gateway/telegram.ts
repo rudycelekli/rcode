@@ -4,7 +4,7 @@
  * Pairing: unknown users get a one-time code; `rcode gateway pair <code>` (or a code printed at startup)
  * adds their user id to the allowlist. Everyone else is ignored.
  */
-import type { ApprovalRequest, ChannelAdapter, IncomingMessage, OutgoingHandle } from "./types.ts";
+import type { ApprovalRequest, ChannelAdapter, ChannelAuth, IncomingMessage, OutgoingHandle } from "./types.ts";
 
 const API = "https://api.telegram.org";
 const MAX = 4000;
@@ -15,13 +15,8 @@ export class TelegramChannel implements ChannelAdapter {
   private running = false;
   private ctl = new AbortController();
   private lastPairReply = new Map<string, number>();
-  constructor(
-    private token: string,
-    private isAllowed: (userId: string) => boolean,
-    /** Returns the pairing code to show (or undefined when rate-limited / too many pending). */
-    private onPairRequest: (userId: string, userName?: string) => string | undefined,
-    private offsetStore?: { get: () => number; set: (n: number) => void },
-  ) {}
+  username = "";
+  constructor(private token: string, private auth: ChannelAuth, private offsetStore?: { get: () => number; set: (n: number) => void }) {}
 
   private async call<T = any>(method: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     const res = await fetch(`${API}/bot${this.token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
@@ -36,6 +31,7 @@ export class TelegramChannel implements ChannelAdapter {
 
   async start(onMessage: (m: IncomingMessage) => void, onApproval: (id: string, d: "allow" | "allow-session" | "deny", userId: string, conv: string) => void) {
     const me = await this.call("getMe", {});
+    this.username = me.username;
     // A leftover webhook makes getUpdates fail with 409 — long polling requires it gone.
     await this.call("deleteWebhook", { drop_pending_updates: false }).catch(() => {});
     this.offset = this.offsetStore?.get() ?? 0;
@@ -57,7 +53,7 @@ export class TelegramChannel implements ChannelAdapter {
               const cq = u.callback_query;
               const from = String(cq.from.id);
               await this.call("answerCallbackQuery", { callback_query_id: cq.id }).catch(() => {});
-              if (!this.isAllowed(from)) continue;
+              if (!this.auth.isAllowed(from)) continue;
               const [kind, d, id] = String(cq.data ?? "").split(":");
               const decision = d === "a" ? "allow" : d === "s" ? "allow-session" : d === "d" ? "deny" : undefined;
               if (kind === "ap1" && id && decision) {
@@ -71,16 +67,14 @@ export class TelegramChannel implements ChannelAdapter {
             const m = u.message;
             if (!m) continue;
             const from = String(m.from?.id ?? "");
-            if (!this.isAllowed(from)) {
-              // Only answer strangers in private chats, and at most once per 10 minutes per user.
-              if (m.chat?.type !== "private") continue;
+            if (!this.auth.isAllowed(from)) {
+              if (m.chat?.type !== "private") continue; // strangers are only answered in DMs
+              const isLink = /^\/start\s+\S{16,}/.test(m.text ?? "");
               const last = this.lastPairReply.get(from) ?? 0;
-              if (Date.now() - last < 10 * 60_000) continue;
+              if (!isLink && Date.now() - last < 10 * 60_000) continue; // rate limit
               this.lastPairReply.set(from, Date.now());
-              const code = this.onPairRequest(from, m.from?.username);
-              if (!code) continue;
-              console.log(`[gateway] pairing request from ${m.from?.username ?? from} — approve with: rcode gateway pair ${code}`);
-              await this.call("sendMessage", { chat_id: m.chat.id, text: `🔒 This rcode instance is private.\nPairing code: ${code}\nAsk the owner to run: rcode gateway pair ${code}` }).catch(() => {});
+              const reply = this.auth.onUnknown(from, m.from?.username, m.text ?? "");
+              if (reply) await this.call("sendMessage", { chat_id: m.chat.id, text: reply }).catch(() => {});
               continue;
             }
             const conv = m.message_thread_id ? `${m.chat.id}:${m.message_thread_id}` : String(m.chat.id);

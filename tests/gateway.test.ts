@@ -11,15 +11,28 @@ writeFileSync(join(home, "config.json"), JSON.stringify({ gateway: { web: { toke
 describe("gateway", () => {
   test("pairing codes: 8 chars, unambiguous, single live code per user, max 3 pending, hashed at rest", async () => {
     const { createPairCode, pairCode, loadState } = await import("../src/gateway/server.ts");
-    const c1 = createPairCode("u1", "alice")!;
+    const c1 = createPairCode("telegram", "u1", "alice")!;
     expect(c1).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
-    expect(createPairCode("u1")).toBeUndefined();
-    createPairCode("u2"); createPairCode("u3");
-    expect(createPairCode("u4")).toBeUndefined();
+    expect(createPairCode("telegram", "u1")).toBeUndefined();
+    createPairCode("slack", "u2"); createPairCode("discord", "u3");
+    expect(createPairCode("telegram", "u4")).toBeUndefined();
     expect(JSON.stringify(loadState())).not.toContain(c1);
     expect(pairCode("WRONGCOD")).toBeUndefined();
-    expect(pairCode(c1.toLowerCase())).toBe("alice");
-    expect(loadState().telegramAllowed).toContain("u1");
+    expect(pairCode(c1.toLowerCase())?.who).toBe("alice");
+    expect(loadState().users.telegram?.u1?.role).toBe("owner");
+  });
+
+  test("pairing links are one-time; roles gate approvals; v1 state migrates", async () => {
+    const st = await import("../src/gateway/state.ts");
+    const tok = st.createLinkToken("user");
+    expect(st.redeemLink(tok, "discord", "d1", "bob")).toBe("user");
+    expect(st.redeemLink(tok, "discord", "d2")).toBeUndefined();
+    expect(st.roleOf("discord", "d1")).toBe("user");
+    expect(st.roleOf("discord", "nobody")).toBeUndefined();
+    expect(st.roleOf("discord", "cfg-owner", { owners: ["cfg-owner"] })).toBe("owner");
+    st.updateState((s) => { (s as any).telegramAllowed = ["legacy1"]; });
+    expect(st.loadState().users.telegram?.legacy1?.role).toBe("owner");
+    expect(st.removeUser("discord", "d1")).toBe(true);
   });
 
   test("web channel: approvals are bound to the conversation that raised them", async () => {

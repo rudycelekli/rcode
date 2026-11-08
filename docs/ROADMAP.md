@@ -21,11 +21,12 @@ Distilled from the research in [`docs/research/`](research) (pi, oh-my-pi, jcode
 - `/context` breakdown (system sections, per-tool schema cost, conversation by type); lazy MCP loading (`mcp_search`/`mcp_call`) above 30 MCP tools.
 - Repo map: zero-dependency symbol extraction (~15 languages) + personalized PageRank over the reference graph with query relevance; `read` outline mode and "definitions further down" hints.
 - Memory v3: `/promote` memories into AGENTS.md conventions (shareable via git); opt-in on-device MiniLM embeddings through ruvector with cached vectors.
+- Gateway round 2: Slack (Socket Mode) and Discord (Gateway + buttons) channels, owner vs. user roles, one-time pairing links + terminal QR, chat-managed jobs (/every, /daily, /jobs, /unjob) that can't spawn jobs, single-instance lock, `gateway users|revoke`.
 - Frontends: TUI (scrollback-native, differential live region, completions, paste collapsing), print/JSON, JSONL RPC with approvals, ACP server.
 
 ## P0 — next
 
-- **Gateway round 2**: owner/user roles, one-tap pairing link + QR, Slack (Socket Mode) and Discord, voice notes, single-instance lock.
+- **Gateway round 3**: voice notes (local whisper / provider transcription), file attachments both ways, webhook mode with secret tokens, WhatsApp/Signal bridges.
 - **OAuth / subscription login** where providers officially support it.
 - **Gateway, round 2** (remote-gateway.md): owner vs. user roles, `rcode gateway link` one-tap pairing (t.me deep link + QR), Slack (Socket Mode) and Discord channels, voice notes, control socket + single-instance lock, cron jobs that cannot schedule more cron jobs.
 - **OAuth / subscription login** for providers that officially support it; `rcode login` with browser flow.

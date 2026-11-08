@@ -2,6 +2,8 @@
 
 export interface IncomingMessage {
   channel: string;
+  /** Resolved by the gateway core: "owner" (may approve / change settings), "user" (chat only), "scheduler". */
+  role?: "owner" | "user" | "scheduler";
   /** Conversation key (chat id, or chat id + thread id). One rcode session per conversation. */
   conversationId: string;
   userId: string;
@@ -34,7 +36,9 @@ export interface ChannelAdapter {
 
 export interface GatewayConfig {
   /** Per-channel settings. */
-  telegram?: { token?: string; allowedUsers?: string[]; };
+  telegram?: { token?: string; allowedUsers?: string[]; owners?: string[] };
+  slack?: { botToken?: string; appToken?: string; allowedUsers?: string[]; owners?: string[] };
+  discord?: { token?: string; allowedUsers?: string[]; owners?: string[] };
   web?: { port?: number; host?: string; token?: string };
   /** Working directory for sessions (default: cwd where the gateway starts). */
   cwd?: string;
@@ -43,4 +47,11 @@ export interface GatewayConfig {
   model?: string;
   /** Scheduled prompts: cron-ish "every 30m" / "daily 09:00". */
   schedules?: Array<{ every?: string; at?: string; prompt: string; conversation: string }>;
+}
+
+/** Auth hooks the core gives every adapter (adapters only translate; the core decides). */
+export interface ChannelAuth {
+  isAllowed(userId: string): boolean;
+  /** Message from an unknown user in a private chat. Returns a reply to send, or undefined to stay silent. */
+  onUnknown(userId: string, userName: string | undefined, text: string): string | undefined;
 }

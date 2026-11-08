@@ -68,7 +68,7 @@ async function main() {
       continue: { type: "boolean", short: "c" }, resume: { type: "string", short: "r" },
       plan: { type: "boolean" }, yes: { type: "boolean", short: "y" }, "auto-edit": { type: "boolean" },
       tools: { type: "string" }, minimal: { type: "boolean" }, "no-session": { type: "boolean" },
-      cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
+      user: { type: "boolean" }, cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
       version: { type: "boolean", short: "v" }, help: { type: "boolean", short: "h" },
     },
   });
