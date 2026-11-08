@@ -86,8 +86,10 @@ export class PermissionPolicy {
       const risk = classifyCommand(String(args.command ?? ""));
       if (risk.level === "catastrophic") return { action: "deny", reason: `Refused: command ${risk.reason}. rcode never runs this automatically — ask the user to run it themselves.` };
     }
-    for (const r of this.rules.deny) if (matchRule(r, tool.name, primary)) return { action: "deny", reason: `Denied by rule "${r}"` };
-    for (const r of this.rules.allow) if (matchRule(r, tool.name, primary)) return { action: "allow" };
+    // Lazy MCP: rules apply to the target tool name (e.g. "mcp__github__*"), not to mcp_call itself.
+    const ruleName = tool.name === "mcp_call" && typeof args.name === "string" ? args.name : tool.name;
+    for (const r of this.rules.deny) if (matchRule(r, ruleName, primary)) return { action: "deny", reason: `Denied by rule "${r}"` };
+    for (const r of this.rules.allow) if (matchRule(r, ruleName, primary)) return { action: "allow" };
 
     let e = tool.effects;
     try { e = tool.effectsFor?.(args as any) ?? tool.effects; } catch {}

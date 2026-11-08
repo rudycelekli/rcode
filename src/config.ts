@@ -38,6 +38,8 @@ export interface RcodeConfig {
   verifyGate?: boolean;
   /** Snapshot the git worktree before each prompt (hidden refs) so /undo also reverts bash changes. Default true. */
   checkpoints?: boolean;
+  /** Above this many MCP tools, expose them via mcp_search/mcp_call instead of inline schemas. Default 30. */
+  mcpLazyThreshold?: number;
   /** Force optional tools on/off (default: on when their native CLI is installed). */
   tools?: { browser?: boolean; desktop?: boolean };
   theme?: string;

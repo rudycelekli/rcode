@@ -13,6 +13,7 @@ import { buildSystemPrompt, environmentBlock } from "../context/system-prompt.ts
 import { expandCommand, setClaudeHomeImport, loadAgents, loadCommands, loadSkills, type AgentDef, type Command, type Skill } from "../ext/resources.ts";
 import { ShellHooks } from "../hooks/shell-hooks.ts";
 import { McpManager } from "../mcp/manager.ts";
+import { createLazyMcpTools } from "../mcp/lazy.ts";
 import { createMemoryTools, getMemory, memoryContext, type MemoryProvider } from "../memory/index.ts";
 import { PermissionPolicy, type Asker, type PermissionMode } from "../permissions/policy.ts";
 import { contextTokens, DEFAULT_COMPACTION, findCutPoint, shouldCompact, summarize, type CompactionSettings } from "../session/compaction.ts";
@@ -151,14 +152,22 @@ export class AgentSession {
       maxParallel: 6,
       build: (def, depth) => {
         const model = (def?.model && def.model !== "inherit" && resolveModel(def.model)) || this.model;
-        let tools = filterTools([...coreTools(this.config.tools), ...memTools, ...(this.mcp?.getTools() ?? [])], def?.tools);
+        let tools = filterTools([...coreTools(this.config.tools), ...memTools, ...this.mcpTools()], def?.tools);
         if (depth < 2) tools = [...tools, task];
         const base = buildSystemPrompt({ cwd: this.cwd, tools, env: this.envBlock, subagent: true, mode: this.policy.mode === "plan" ? "plan" : "default" });
         return { model, apiKey: apiKeyFor(model, this.auth), tools, systemPrompt: def ? `${base}\n\n# Your role: ${def.name}\n${def.body}` : base, hooks: { beforeToolCall: (c) => this.policy.decide(c) } };
       },
     });
-    const all = [...coreTools(this.config.tools), task, ...memTools, ...(this.mcp?.getTools() ?? [])];
+    const all = [...coreTools(this.config.tools), task, ...memTools, ...this.mcpTools()];
     return filterTools(all, this.opts.tools);
+  }
+
+  /** MCP tools: inline when few, behind mcp_search/mcp_call when many (saves context, improves selection). */
+  private mcpTools(): Tool[] {
+    const tools = this.mcp?.getTools() ?? [];
+    const threshold = this.config.mcpLazyThreshold ?? 30;
+    if (tools.length <= threshold) return tools;
+    return createLazyMcpTools(() => this.mcp?.getTools() ?? []);
   }
 
   refreshTools() {

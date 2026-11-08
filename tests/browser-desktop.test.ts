@@ -68,3 +68,19 @@ describe("per-action permissions", () => {
     expect((await plan.decide({ tool: desktopTool as any, args: { action: "click", ref: "@x" }, toolCallId: "1" })).action).toBe("deny");
   });
 });
+
+describe("lazy MCP", () => {
+  test("search finds tools; call routes to target with target's effects and rules", async () => {
+    const { createLazyMcpTools } = await import("../src/mcp/lazy.ts");
+    const { z } = await import("zod");
+    let called: any;
+    const target: any = { name: "mcp__github__create_issue", description: "[MCP github] Create a new issue in a repository", schema: z.record(z.string(), z.unknown()), jsonSchema: { type: "object" }, effects: { network: true, runsProcess: true }, execute: async (a: any) => { called = a; return { content: [{ type: "text", text: "ok" }] }; } };
+    const [search, call] = createLazyMcpTools(() => [target]);
+    const r = await search!.execute({ query: "open an issue on github" }, {} as any);
+    expect((r.content[0] as any).text).toContain("mcp__github__create_issue");
+    await call!.execute({ name: "mcp__github__create_issue", arguments: { title: "x" } }, {} as any);
+    expect(called).toEqual({ title: "x" });
+    const deny = new PermissionPolicy("full", { allow: [], deny: ["mcp__github__*"] });
+    expect((await deny.decide({ tool: call as any, args: { name: "mcp__github__create_issue", arguments: {} }, toolCallId: "1" })).action).toBe("deny");
+  });
+});

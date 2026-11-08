@@ -28,7 +28,7 @@ const BUILTINS: Array<[string, string]> = [
   ["help", "Show commands and keys"], ["model", "Switch model: /model <ref> (no arg lists)"], ["thinking", "Set reasoning: off|low|medium|high|xhigh|max"],
   ["mode", "Approval mode: ask|auto-edit|full|plan"], ["plan", "Toggle plan mode (read-only)"], ["goal", "Set a goal the agent must reach before stopping"],
   ["compact", "Summarize older context: /compact [focus]"], ["new", "Start a fresh session"], ["resume", "Resume a recent session"], ["fork", "Fork this session into a new branch file"],
-  ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["context", "Context window usage"], ["mcp", "MCP server status"],
+  ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["context", "Where the context window goes (by section, tool, message type)"], ["mcp", "MCP server status"],
   ["memory", "Search memory: /memory <query>"], ["remember", "Save a memory: /remember <text>"], ["tools", "List available tools"], ["skills", "List skills"],
   ["agents", "List subagent types"], ["commands", "List slash commands"], ["export", "Export transcript to markdown"], ["copy", "Copy last answer to clipboard"], ["clear", "Clear screen"], ["quit", "Exit"],
 ];
@@ -280,7 +280,12 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
       }
       case "fork": say(a.gray(`forked → ${session.fork()}`)); return true;
       case "rewind": { const t = session.rewind(1); if (t !== undefined) { ed.text = t.replace(/^<relevant_memories>[\s\S]*?<\/relevant_memories>\n\n/, ""); say(a.gray("rewound one exchange (still in session tree)")); } else say(a.gray("nothing to rewind")); return true; }
-      case "cost": case "context": {
+      case "context": {
+        const { contextBreakdown, renderBreakdown } = await import("../context/breakdown.ts");
+        say(renderBreakdown(contextBreakdown(session.agent.config.systemPrompt, session.agent.config.tools, session.messages, session.model.contextWindow), Math.min(50, cols() - 40)));
+        return true;
+      }
+      case "cost": {
         const u = session.agent.usage;
         const ctx = contextTokens(session.messages);
         say(`  input ${u.input.toLocaleString()} · cache read ${u.cacheRead.toLocaleString()} · cache write ${u.cacheWrite.toLocaleString()} · output ${u.output.toLocaleString()}\n  cost $${u.cost.total.toFixed(4)} · context ${ctx.toLocaleString()} / ${session.model.contextWindow.toLocaleString()} (${Math.round((ctx / session.model.contextWindow) * 100)}%)`);

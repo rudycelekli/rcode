@@ -43,6 +43,8 @@ export async function runRpc(opts: SessionOptions): Promise<number> {
     abort: () => { session.abort(); return { aborted: true }; },
     get_state: () => ({ sessionId: session.session.id, file: session.session.file, model: `${session.model.provider}/${session.model.id}`, thinking: session.thinking, mode: session.mode, running: session.isRunning, usage: session.agent.usage, messages: session.messages.length }),
     get_messages: () => session.messages,
+    get_context: async () => (await import("../context/breakdown.ts")).contextBreakdown(session.agent.config.systemPrompt, session.agent.config.tools, session.messages, session.model.contextWindow),
+    undo: () => session.undo() ?? null,
     set_model: (p) => { const m = session.setModel(String(p.model)); return { model: `${m.provider}/${m.id}` }; },
     set_thinking: (p) => { session.setThinking(p.level); return { thinking: p.level }; },
     set_mode: (p) => { session.setMode(p.mode); return { mode: p.mode }; },
