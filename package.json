@@ -15,7 +15,9 @@
     "dev": "bun run src/cli.ts",
     "test": "bun test ./tests",
     "typecheck": "tsc --noEmit",
-    "build": "bun build --compile --minify src/cli.ts --outfile dist/rcode"
+    "prebuild": "bun scripts/gen-builtin.ts",
+    "build": "bun build --compile --minify --external ruvector src/cli.ts --outfile dist/rcode",
+    "gen": "bun scripts/gen-builtin.ts"
   },
   "engines": {
     "bun": ">=1.2.0"

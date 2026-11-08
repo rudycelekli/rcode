@@ -5,7 +5,8 @@
 > Status: **early alpha** — moving fast, in the open. Issues and PRs welcome.
 
 ```bash
-bun install -g github:rudycelekli/rcode   # or: git clone … && bun install && bun link
+curl -fsSL https://raw.githubusercontent.com/rudycelekli/rcode/main/install.sh | sh   # prebuilt binary (macOS/Linux)
+# or from source: bun install -g github:rudycelekli/rcode
 rcode setup                               # 60-second wizard: model, approval mode, RuvNet stack
 rcode                                     # start working
 ```

@@ -48,6 +48,7 @@ export async function runSubcommand(sub: string, args: string[], flags: Record<s
     case "doctor": return doctor(cwd);
     case "setup": return setup(cwd);
     case "gateway": return gateway(args, flags, cwd);
+    case "update": return selfUpdate();
     case "acp": { const { runAcp } = await import("./modes/acp.ts"); return runAcp({ cwd, model: flags.model, minimal: flags.minimal }); }
     case "mcp": {
       const cfg = loadConfig(cwd);
@@ -239,5 +240,32 @@ async function serviceInstall(action: "install" | "uninstall", cwd: string): Pro
   Bun.spawnSync(["systemctl", "--user", "daemon-reload"]);
   Bun.spawnSync(["systemctl", "--user", "enable", "--now", "rcode-gateway"]);
   console.log("Installed systemd user service: systemctl --user status rcode-gateway");
+  return 0;
+}
+
+/** Self-update for compiled binaries: latest GitHub release, SHA-256 verified, atomic replace. */
+async function selfUpdate(): Promise<number> {
+  const { VERSION } = await import("./version.ts");
+  const exe = process.execPath;
+  const compiled = !/\/bun(\.exe)?$/.test(exe);
+  if (!compiled) { console.log("Running from source. Update with: git pull && bun install   (or: bun install -g github:rudycelekli/rcode)"); return 0; }
+  const rel: any = await (await fetch("https://api.github.com/repos/rudycelekli/rcode/releases/latest", { headers: { accept: "application/vnd.github+json" } })).json();
+  const tag = String(rel.tag_name ?? "");
+  if (!tag) { console.log("No release published yet."); return 1; }
+  if (tag.replace(/^v/, "") === VERSION) { console.log(`rcode ${VERSION} is up to date.`); return 0; }
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  const asset = `rcode-${process.platform}-${arch}`;
+  const base = `https://github.com/rudycelekli/rcode/releases/download/${tag}`;
+  console.log(`Updating ${VERSION} → ${tag} (${asset})…`);
+  const [bin, sums] = await Promise.all([fetch(`${base}/${asset}`), fetch(`${base}/SHA256SUMS`)]);
+  if (!bin.ok || !sums.ok) { console.log("Download failed."); return 1; }
+  const buf = Buffer.from(await bin.arrayBuffer());
+  const want = (await sums.text()).split("\n").find((l) => l.endsWith(` ${asset}`))?.split(/\s+/)[0];
+  const got = new Bun.CryptoHasher("sha256").update(buf).digest("hex");
+  if (!want || want !== got) { console.log("Checksum mismatch — not updating."); return 1; }
+  const { writeFileSync, renameSync, chmodSync } = await import("node:fs");
+  const tmp = `${exe}.new`;
+  writeFileSync(tmp, buf); chmodSync(tmp, 0o755); renameSync(tmp, exe);
+  console.log(`Updated to ${tag}.`);
   return 0;
 }

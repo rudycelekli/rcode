@@ -12,6 +12,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: 1.2.22 }
       - run: bun install --frozen-lockfile
+      - run: bun scripts/gen-builtin.ts && git diff --exit-code src/ext/builtin-data.generated.ts
       - run: bunx tsc --noEmit
       - run: bun test ./tests
       - run: bun src/cli.ts --version && bun src/cli.ts -p -m faux/ci --minimal --no-session "hello"

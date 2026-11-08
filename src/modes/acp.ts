@@ -1,3 +1,4 @@
+import { VERSION } from "../version.ts";
 /**
  * Agent Client Protocol (ACP) server over stdio — JSON-RPC 2.0, newline-delimited.
  * Lets ACP clients (Zed, t3code's ACP driver, goose desktop, …) drive rcode with no per-client code.
@@ -85,7 +86,7 @@ export async function runAcp(base: { cwd: string; model?: string; minimal?: bool
     initialize: () => ({
       protocolVersion: 1,
       agentCapabilities: { loadSession: true, promptCapabilities: { image: true, audio: false, embeddedContext: true }, mcpCapabilities: { http: true, sse: false } },
-      agentInfo: { name: "rcode", version: "0.1.0" },
+      agentInfo: { name: "rcode", version: VERSION },
       authMethods: [],
     }),
     authenticate: () => ({}),

@@ -5,7 +5,11 @@
  *   agents   — <dir>/<name>.md                  (subagent types: name, description, tools, model)
  * Search order (later overrides earlier): built-in → ~/.rcode → ~/.claude (compat) → project .claude → project .rcode
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { BUILTIN_FILES } from "./builtin-data.generated.ts";
+
+const BUILTIN_VERSION = createHash("sha256").update(JSON.stringify(BUILTIN_FILES)).digest("hex").slice(0, 12);
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +42,19 @@ const unq = (s: string) => s.replace(/^["']|["']$/g, "");
 let claudeHomeOptIn = false;
 export function setClaudeHomeImport(v: boolean) { claudeHomeOptIn = v; }
 
-export const BUILTIN_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "builtin");
+const SOURCE_BUILTIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "builtin");
+
+/** Source checkout: use builtin/ directly. Compiled binary: extract the embedded copy once per version. */
+function builtinDir(): string {
+  if (existsSync(SOURCE_BUILTIN)) return SOURCE_BUILTIN;
+  const dir = join(RCODE_HOME, "builtin", BUILTIN_VERSION);
+  if (!existsSync(join(dir, ".complete"))) {
+    for (const [rel, content] of Object.entries(BUILTIN_FILES)) { const p = join(dir, rel); mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, content); }
+    writeFileSync(join(dir, ".complete"), "");
+  }
+  return dir;
+}
+export const BUILTIN_DIR = builtinDir();
 
 function roots(cwd: string, kind: "skills" | "commands" | "agents", extra: string[] = []): string[] {
   // ~/.claude commands are cheap (not in the prompt); agents/skills from ~/.claude are opt-in to avoid prompt bloat.

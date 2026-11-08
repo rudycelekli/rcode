@@ -1,3 +1,4 @@
+import { VERSION } from "../version.ts";
 /**
  * MCP client manager. Connects configured servers (stdio or streamable HTTP) in parallel,
  * exposes their tools as rcode tools named `mcp__<server>__<tool>`, and maps MCP annotations
@@ -34,7 +35,7 @@ export class McpManager {
     const st: McpServerState = { name, status: "connecting", tools: 0 };
     this.servers.set(name, st);
     try {
-      const client = new Client({ name: "rcode", version: "0.1.0" }, { capabilities: {} });
+      const client = new Client({ name: "rcode", version: VERSION }, { capabilities: {} });
       const transport = cfg.url
         ? new StreamableHTTPClientTransport(new URL(cfg.url), { requestInit: { headers: cfg.headers } })
         : new StdioClientTransport({ command: cfg.command!, args: cfg.args ?? [], env: { ...(process.env as Record<string, string>), ...cfg.env }, cwd: this.cwd, stderr: "ignore" });

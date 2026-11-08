@@ -15,7 +15,8 @@ import type { PermissionMode } from "./permissions/policy.ts";
 import type { ThinkingLevel } from "./ai/types.ts";
 import { ensureHome } from "./config.ts";
 
-export const VERSION = "0.1.0";
+import { VERSION } from "./version.ts";
+export { VERSION };
 
 const HELP = `rcode ${VERSION} — the open, fast, extensible coding agent
 
@@ -30,6 +31,7 @@ Usage:
   rcode models [--refresh]       List models (refresh pricing from models.dev)
   rcode sessions                 List recent sessions for this directory
   rcode login <provider> [key]   Store an API key (anthropic, openai, google, openrouter, telegram, …)
+  rcode update                   Update to the latest release (compiled binary)
   rcode gateway                  Talk to rcode from your phone: Telegram + web UI (pair/install/uninstall)
 
 Options:
@@ -79,7 +81,7 @@ async function main() {
   ensureHome();
 
   const sub = positionals[0];
-  if (sub && ["setup", "doctor", "models", "sessions", "login", "acp", "mcp", "gateway"].includes(sub) && !values.print) {
+  if (sub && ["setup", "doctor", "models", "sessions", "login", "acp", "mcp", "gateway", "update"].includes(sub) && !values.print) {
     const { runSubcommand } = await import("./commands.ts");
     return runSubcommand(sub, positionals.slice(1), values as any, cwd);
   }

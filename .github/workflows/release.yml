@@ -1,0 +1,27 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.2.22 }
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/gen-builtin.ts
+      - run: bunx tsc --noEmit && bun test ./tests
+      - name: Build binaries
+        run: |
+          mkdir -p out
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            bun build --compile --minify --external ruvector --target=bun-$t src/cli.ts --outfile out/rcode-$t
+          done
+          cd out && sha256sum rcode-* > SHA256SUMS && cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true

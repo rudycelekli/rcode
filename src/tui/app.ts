@@ -1,3 +1,4 @@
+import { VERSION } from "../version.ts";
 /**
  * rcode interactive TUI.
  * Main-screen renderer: finalized output is committed to native scrollback exactly once; a small live
@@ -472,7 +473,7 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
 
   const ctxFiles = (await import("../context/system-prompt.ts")).loadContextFiles(session.cwd);
   const banner = [
-    `${a.accent(a.bold("rcode"))} ${a.gray("v0.1.0")}  ${a.gray("·")} ${session.model.provider}/${session.model.id} ${a.gray("·")} ${session.mode}`,
+    `${a.accent(a.bold("rcode"))} ${a.gray("v" + VERSION)}  ${a.gray("·")} ${session.model.provider}/${session.model.id} ${a.gray("·")} ${session.mode}`,
     a.gray(`${session.cwd}${ctxFiles.length ? ` · ${ctxFiles.map((f) => basename(f.path)).join(", ")}` : ""} · ${session.commands.length} workflows · ${session.agentDefs.length} agents · ${session.skills.length} skills`),
     session.messages.length ? a.gray(`resumed session with ${session.messages.length} messages`) : a.gray("/help for commands · shift+tab cycles approval mode · esc interrupts"),
     "",
