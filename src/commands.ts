@@ -99,6 +99,9 @@ async function doctor(cwd: string): Promise<number> {
   console.log(c.bold("\nRuvNet stack"));
   const rf = findRufloBin(); rf ? ok(`ruflo: ${rf}`) : console.log(c.dim("  · ruflo not installed (npm i -g ruflo) — optional"));
   const br = findBrainServer(); br ? ok(`ruvnet-brain: ${br}`) : console.log(c.dim("  · ruvnet-brain not installed (npx ruvnet-brain) — optional"));
+  console.log(c.bold("\nBrowser & desktop"));
+  const { findCli, INSTALL_HINT } = await import("./tools/native-cli.ts");
+  for (const n of ["agent-browser", "agent-desktop"] as const) { const b = findCli(n); b ? ok(`${n}: ${b}`) : console.log(c.dim(`  · ${n} not installed — ${INSTALL_HINT[n]}`)); }
   console.log(c.bold("\nExtensions"));
   ok(`${loadCommands(cwd).length} slash commands · ${loadSkills(cwd).length} skills · ${loadAgents(cwd).length} agent types`);
   isTrusted(cwd) ? ok("project is trusted (project hooks/MCP/commands enabled)") : console.log(c.dim("  · project not trusted — project-level hooks/MCP are ignored (run `rcode setup` to trust)"));
@@ -129,6 +132,22 @@ async function setup(cwd: string): Promise<number> {
   console.log(c.bold("\nRuvNet stack (optional, auto-detected)"));
   rf ? ok("ruflo detected — memory, routing & swarm tools will be wired in automatically") : console.log(c.dim("  · ruflo: npm i -g ruflo  (adds learning hooks + swarm tools)"));
   br ? ok("ruvnet-brain detected — RuvNet-grounded answers enabled") : console.log(c.dim("  · ruvnet-brain: npx ruvnet-brain  (source-grounded RuvNet knowledge)"));
+  console.log(c.bold("\nBrowser & desktop control (optional)"));
+  const { findCli } = await import("./tools/native-cli.ts");
+  const missing = (["agent-browser", "agent-desktop"] as const).filter((n) => !findCli(n));
+  if (!missing.length) ok("agent-browser and agent-desktop detected — browser and desktop tools enabled");
+  else {
+    const a = await ask(`Install ${missing.join(" + ")} (Vercel Labs, Apache-2.0) into ~/.rcode/tools via npm? (y/n)`, "n");
+    if (a.toLowerCase().startsWith("y")) {
+      const { join } = await import("node:path");
+      const r = Bun.spawnSync(["npm", "install", "--prefix", join(RCODE_HOME, "tools"), ...missing.map((m) => (m === "agent-desktop" ? "agent-desktop" : m))], { stdout: "inherit", stderr: "inherit" });
+      if (r.exitCode === 0) {
+        ok("installed");
+        if (missing.includes("agent-browser")) { console.log(c.dim("  fetching Chrome for agent-browser (uses system Chrome if present)…")); Bun.spawnSync([join(RCODE_HOME, "tools", "node_modules", ".bin", "agent-browser"), "install"], { stdout: "inherit", stderr: "inherit" }); }
+        if (missing.includes("agent-desktop") && process.platform === "darwin") console.log(c.dim("  macOS: grant Accessibility to your terminal app (System Settings → Privacy & Security → Accessibility). Run `agent-desktop permissions --guide`."));
+      } else bad("npm install failed — install manually later (see `rcode doctor`)");
+    }
+  }
   rl.close();
   console.log(`\n${c.green("Ready.")} Run ${c.bold("rcode")} to start, or ${c.bold("rcode doctor")} to verify.\n`);
   return 0;

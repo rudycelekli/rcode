@@ -25,6 +25,8 @@ rcode was built after studying the best open agents in depth — [pi](https://gi
 | **MCP-native** | stdio + streamable HTTP servers, tool annotations mapped to permissions. `rcode mcp add <name> <cmd>`. |
 | **Workflows & skills** | ~30 built-in slash workflows, Agent Skills (`SKILL.md`), markdown commands with `$ARGUMENTS`, Claude-Code-compatible hooks (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, …). |
 | **Human + AI native** | Beautiful TUI · `rcode -p` headless · `--json` JSONL events · `--rpc` JSONL RPC with approvals · `rcode acp` (Agent Client Protocol for Zed, t3code, goose desktop…). |
+| **Browser & desktop** | `browser` tool drives a real Chrome via [agent-browser](https://github.com/vercel-labs/agent-browser) (accessibility-tree snapshots with `@refs`, screenshots, forms); `desktop` tool operates native apps via [agent-desktop](https://github.com/vercel-labs/agent-desktop). Per-action permissions (external domains ask once per domain; every desktop action asks unless full mode), secret-field refusal. `rcode setup` installs both. |
+| **Remote** | `rcode gateway` — talk to your agent from your phone: Telegram bot (pairing codes, inline ✅/❌ approval buttons, streaming edits) and a token-protected mobile web UI. One persistent session per chat, `/stop` `/new` `/mode` `/undo` from chat, scheduled prompts, `rcode gateway install` as a launchd/systemd service. |
 | **Sessions** | Append-only JSONL trees: resume, fork, rewind — branch position persisted. |
 | **RuvNet stack, pre-wired** | If [ruflo](https://github.com/ruvnet/ruflo) or [ruvnet-brain](https://github.com/stuinfla/ruvnet-brain) are installed, rcode auto-connects them: learning hooks, swarm & memory tools, and source-grounded RuvNet answers. |
 
@@ -42,6 +44,9 @@ rcode -y                       # full auto (catastrophic commands still refused)
 rcode -m ollama/qwen3-coder    # fully local
 rcode acp                      # serve the Agent Client Protocol over stdio
 rcode doctor                   # verify providers, tools, MCP, memory
+rcode gateway                  # remote control: web UI + Telegram (rcode login telegram <bot-token>)
+rcode gateway pair ABC123      # approve a Telegram user who messaged your bot
+rcode gateway install          # run the gateway as a background service
 ```
 
 **In the TUI:** `enter` send · `alt+enter` newline · `esc` interrupt · `shift+tab` cycle approval mode · `ctrl+t` cycle thinking · `tab` complete `/commands` and `@files` · while the agent works, `enter` steers it and `alt+enter` queues a follow-up. `/help` lists everything.

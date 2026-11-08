@@ -89,8 +89,9 @@ export class PermissionPolicy {
     for (const r of this.rules.deny) if (matchRule(r, tool.name, primary)) return { action: "deny", reason: `Denied by rule "${r}"` };
     for (const r of this.rules.allow) if (matchRule(r, tool.name, primary)) return { action: "allow" };
 
-    const e = tool.effects;
-    if (e.readOnly && !e.network) return { action: "allow" };
+    let e = tool.effects;
+    try { e = tool.effectsFor?.(args as any) ?? tool.effects; } catch {}
+    if (e.readOnly && !e.network && !e.sensitive) return { action: "allow" };
     if (this.mode === "plan") {
       if (e.readOnly) return { action: "allow" };
       if (tool.name === "bash" && classifyCommand(String(args.command)).level === "safe") return { action: "allow" };
@@ -104,16 +105,20 @@ export class PermissionPolicy {
       if (risk.level === "safe") return { action: "allow" };
       if (risk.level === "risky") { needAsk = true; reason = risk.reason!; }
       else if (this.mode === "ask") { needAsk = true; reason = "runs a command"; }
+    } else if (e.sensitive) {
+      needAsk = true; reason = e.network ? "opens an external site" : "reads private screen/clipboard data";
     } else if (e.writesFiles) {
       if (this.mode === "ask") { needAsk = true; reason = "modifies files"; }
     } else if (e.network) {
       if (this.mode === "ask") { needAsk = true; reason = "accesses the network"; }
-    } else if (e.runsProcess || e.destructive || !e.readOnly) {
-      if (this.mode === "ask" || e.destructive) { needAsk = true; reason = e.destructive ? "is destructive" : "has side effects"; }
+    } else if (e.runsProcess || e.destructive || e.sensitive || !e.readOnly) {
+      if (this.mode === "ask" || e.destructive || e.sensitive) { needAsk = true; reason = e.destructive ? "is destructive" : e.sensitive ? "reads private screen/clipboard data" : "has side effects"; }
     }
     if (!needAsk) return { action: "allow" };
 
-    const key = tool.name === "bash" ? `bash:${String(args.command).split(/\s+/).slice(0, 2).join(" ")}` : tool.name;
+    let customKey: string | undefined;
+    try { customKey = tool.permissionKey?.(args as any); } catch {}
+    const key = customKey ?? (tool.name === "bash" ? `bash:${String(args.command).split(/\s+/).slice(0, 2).join(" ")}` : tool.name);
     if (this.sessionAllows.has(key)) return { action: "allow" };
     if (!this.asker) return { action: "deny", reason: `Needs approval (${reason}) but no interactive user. Re-run with --yes or add an allow rule.` };
     const ans = await this.asker({ tool, args, summary, reason });

@@ -8,6 +8,8 @@ export interface ToolEffects {
   runsProcess?: boolean;
   network?: boolean;
   destructive?: boolean;
+  /** Reads potentially private data (screen contents, clipboard). Asks once per session outside full mode. */
+  sensitive?: boolean;
 }
 
 export interface ToolContext {
@@ -45,6 +47,10 @@ export interface Tool<S extends z.ZodType = z.ZodType> {
   /** "shared" tools run in parallel with each other; "exclusive" run alone, in order. */
   concurrency?: "shared" | "exclusive";
   effects: ToolEffects;
+  /** Per-call effects for multi-action tools (e.g. browser: "snapshot" is read-only, "click" is not). */
+  effectsFor?: (args: z.infer<S>) => ToolEffects;
+  /** Key used for "always allow (session)" approvals, e.g. "browser:open:example.com" or "desktop:click". */
+  permissionKey?: (args: z.infer<S>) => string;
   /** One-line summary of a call for UIs/permission prompts. */
   summarize?: (args: z.infer<S>) => string;
   execute(args: z.infer<S>, ctx: ToolContext): Promise<ToolResult>;

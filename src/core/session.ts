@@ -146,13 +146,13 @@ export class AgentSession {
       maxParallel: 6,
       build: (def, depth) => {
         const model = (def?.model && def.model !== "inherit" && resolveModel(def.model)) || this.model;
-        let tools = filterTools([...coreTools(), ...memTools, ...(this.mcp?.getTools() ?? [])], def?.tools);
+        let tools = filterTools([...coreTools(this.config.tools), ...memTools, ...(this.mcp?.getTools() ?? [])], def?.tools);
         if (depth < 2) tools = [...tools, task];
         const base = buildSystemPrompt({ cwd: this.cwd, tools, env: this.envBlock, subagent: true, mode: this.policy.mode === "plan" ? "plan" : "default" });
         return { model, apiKey: apiKeyFor(model, this.auth), tools, systemPrompt: def ? `${base}\n\n# Your role: ${def.name}\n${def.body}` : base, hooks: { beforeToolCall: (c) => this.policy.decide(c) } };
       },
     });
-    const all = [...coreTools(), task, ...memTools, ...(this.mcp?.getTools() ?? [])];
+    const all = [...coreTools(this.config.tools), task, ...memTools, ...(this.mcp?.getTools() ?? [])];
     return filterTools(all, this.opts.tools);
   }
 

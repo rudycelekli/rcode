@@ -34,6 +34,8 @@ export interface RcodeConfig {
   memory?: { enabled?: boolean; provider?: "auto" | "ruvector" | "flat" | "off"; autoCapture?: boolean; maxInject?: number };
   ruvnet?: { ruflo?: boolean; brain?: boolean };
   maxTurns?: number;
+  /** Force optional tools on/off (default: on when their native CLI is installed). */
+  tools?: { browser?: boolean; desktop?: boolean };
   theme?: string;
   /** Compatibility imports. claudeHome: also load ~/.claude/agents and ~/.claude/skills. */
   compat?: { claudeHome?: boolean };
