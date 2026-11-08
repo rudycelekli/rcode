@@ -18,7 +18,7 @@ import { renderMarkdown } from "./markdown.ts";
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MODES: PermissionMode[] = ["ask", "auto-edit", "full", "plan"];
-const NOARG = new Set(["help", "plan", "new", "fork", "rewind", "cost", "context", "mcp", "tools", "skills", "agents", "commands", "export", "copy", "clear", "quit", "resume", "model", "thinking", "mode", "memory"]);
+const NOARG = new Set(["help", "undo", "plan", "new", "fork", "rewind", "cost", "context", "mcp", "tools", "skills", "agents", "commands", "export", "copy", "clear", "quit", "resume", "model", "thinking", "mode", "memory"]);
 const THINK: ThinkingLevel[] = ["off", "low", "medium", "high", "xhigh", "max"];
 
 interface RunningTool { id: string; name: string; summary: string; started: number; tail?: string }
@@ -28,7 +28,7 @@ const BUILTINS: Array<[string, string]> = [
   ["help", "Show commands and keys"], ["model", "Switch model: /model <ref> (no arg lists)"], ["thinking", "Set reasoning: off|low|medium|high|xhigh|max"],
   ["mode", "Approval mode: ask|auto-edit|full|plan"], ["plan", "Toggle plan mode (read-only)"], ["goal", "Set a goal the agent must reach before stopping"],
   ["compact", "Summarize older context: /compact [focus]"], ["new", "Start a fresh session"], ["resume", "Resume a recent session"], ["fork", "Fork this session into a new branch file"],
-  ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["cost", "Token usage and cost"], ["context", "Context window usage"], ["mcp", "MCP server status"],
+  ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["context", "Context window usage"], ["mcp", "MCP server status"],
   ["memory", "Search memory: /memory <query>"], ["remember", "Save a memory: /remember <text>"], ["tools", "List available tools"], ["skills", "List skills"],
   ["agents", "List subagent types"], ["commands", "List slash commands"], ["export", "Export transcript to markdown"], ["copy", "Copy last answer to clipboard"], ["clear", "Clear screen"], ["quit", "Exit"],
 ];
@@ -271,6 +271,11 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
           if (m.role === "user") say(a.accent("❯ ") + m.content.map((c) => (c.type === "text" ? c.text : "")).join("").slice(0, 400));
           else if (m.role === "assistant") { const t = m.content.filter((c) => c.type === "text").map((c: any) => c.text).join(""); if (t) commit(renderMarkdown(t).flatMap((l) => wrap(l, cols()))); }
         }
+        return true;
+      }
+      case "undo": {
+        const r = session.undo();
+        say(r ? a.gray(`reverted ${r.files.length} file(s): ${r.files.map((f) => f.replace(session.cwd + "/", "")).join(", ")}\n  (changes made via bash are not tracked)`) : a.gray("nothing to undo"));
         return true;
       }
       case "fork": say(a.gray(`forked → ${session.fork()}`)); return true;

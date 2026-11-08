@@ -1,4 +1,4 @@
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import type { ToolContext, ToolResult } from "../agent/types.ts";
@@ -78,3 +78,16 @@ export function ripgrep(): string | null {
 }
 
 export const DEFAULT_IGNORES = ["node_modules", ".git", "dist", "build", ".next", "target", ".venv", "venv", "__pycache__", ".cache", "coverage", ".turbo"];
+
+// ── File history: pre-images of files touched by edit/write, grouped by prompt turn (powers /undo) ──
+export interface FileSnapshot { turn: number; path: string; content: string | null }
+export function recordPreimage(ctx: ToolContext, path: string) {
+  let h = ctx.state.get("fileHistory") as FileSnapshot[] | undefined;
+  if (!h) { h = []; ctx.state.set("fileHistory", h); }
+  const turn = (ctx.state.get("turn") as number | undefined) ?? 0;
+  if (h.some((x) => x.turn === turn && x.path === path)) return; // keep the earliest image per turn
+  let content: string | null = null;
+  try { content = readFileSync(path, "utf8"); } catch {}
+  h.push({ turn, path, content });
+  if (h.length > 2000) h.splice(0, h.length - 2000);
+}

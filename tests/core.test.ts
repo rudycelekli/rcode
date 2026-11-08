@@ -190,3 +190,23 @@ describe("resources", () => {
     expect(expandCommand({ name: "x", description: "", body, path: "" }, "fix tests")).toBe("Do fix tests now with fix");
   });
 });
+
+describe("AgentSession (faux)", () => {
+  test("undo reverts the last turn's file edits; created files are deleted", async () => {
+    const { AgentSession } = await import("../src/core/session.ts");
+    fauxReset();
+    process.env.RCODE_HOME = tmp();
+    const d = tmp();
+    writeFileSync(join(d, "a.txt"), "original");
+    const s = await new AgentSession({ cwd: d, model: "faux/test", minimal: true, ephemeral: true, mode: "full" }).init();
+    fauxScript({ tools: [{ name: "read", args: { path: "a.txt" } }] }, { tools: [{ name: "edit", args: { path: "a.txt", edits: [{ old_text: "original", new_text: "changed" }] } }, { name: "write", args: { path: "new.txt", content: "hi" } }] }, "done");
+    await s.prompt("change it");
+    expect(readFileSync(join(d, "a.txt"), "utf8")).toBe("changed");
+    const r = s.undo();
+    expect(r?.files.length).toBe(2);
+    expect(readFileSync(join(d, "a.txt"), "utf8")).toBe("original");
+    expect(() => readFileSync(join(d, "new.txt"))).toThrow();
+    await s.dispose();
+    delete process.env.RCODE_HOME;
+  });
+});

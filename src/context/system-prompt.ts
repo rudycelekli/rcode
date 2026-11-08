@@ -47,6 +47,8 @@ export interface PromptOptions {
   extra?: string;
   mode?: "default" | "plan";
   subagent?: boolean;
+  /** Pre-computed, frozen environment block (keeps the prompt byte-stable for provider caching). */
+  env?: string;
 }
 
 const CORE = `You are rcode, an expert software engineering agent working in the user's terminal. You read, write and run code to get real work done.
@@ -85,6 +87,14 @@ const SUBAGENT = `
 # Subagent
 You are a subagent working on a delegated task for a parent agent. Work autonomously; do not ask questions. Your final message is returned to the parent verbatim — make it a complete, self-contained report: what you found or did, file paths, and anything uncertain.`;
 
+/** Computed once per session: date + git state at session start (later changes don't bust the prompt cache). */
+export function environmentBlock(cwd: string): string {
+  const env = [`cwd: ${cwd}`, `platform: ${process.platform}`, `session started: ${new Date().toISOString().slice(0, 10)}`];
+  const g = gitInfo(cwd);
+  if (g) env.push(`${g} at session start`);
+  return env.join("\n");
+}
+
 export function buildSystemPrompt(o: PromptOptions): string {
   const parts = [CORE];
   if (o.mode === "plan") parts.push(PLAN_MODE);
@@ -97,9 +107,6 @@ export function buildSystemPrompt(o: PromptOptions): string {
   const ctxFiles = loadContextFiles(o.cwd);
   if (ctxFiles.length) parts.push(`\n# Project instructions\nThe following files contain instructions from the user/project. Follow them.\n${ctxFiles.map((f) => `<file path="${f.path}">\n${f.content.trim()}\n</file>`).join("\n")}`);
   if (o.memory) parts.push(`\n# Memory\nRelevant memories from earlier sessions (may be outdated — verify before relying on them):\n${o.memory}`);
-  const env = [`cwd: ${o.cwd}`, `platform: ${process.platform}`, `date: ${new Date().toISOString().slice(0, 10)}`];
-  const g = gitInfo(o.cwd);
-  if (g) env.push(g);
-  parts.push(`\n# Environment\n${env.join("\n")}`);
+  parts.push(`\n# Environment\n${o.env ?? environmentBlock(o.cwd)}`);
   return parts.join("\n");
 }

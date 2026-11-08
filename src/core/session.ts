@@ -1,3 +1,4 @@
+import { rmSync, writeFileSync } from "node:fs";
 /**
  * AgentSession — the one object every frontend (TUI, print, RPC, ACP, SDK) drives.
  * Wires: config · model/auth · tools (core + task + memory + MCP) · permissions · shell hooks ·
@@ -8,7 +9,7 @@ import type { AgentEvent, AgentHooks, Tool } from "../agent/types.ts";
 import { apiKeyFor, defaultModelRef, resolveModel } from "../ai/models.ts";
 import type { Message, Model, ThinkingLevel, UserContent } from "../ai/types.ts";
 import { loadAuth, loadConfig, type RcodeConfig } from "../config.ts";
-import { buildSystemPrompt } from "../context/system-prompt.ts";
+import { buildSystemPrompt, environmentBlock } from "../context/system-prompt.ts";
 import { expandCommand, setClaudeHomeImport, loadAgents, loadCommands, loadSkills, type AgentDef, type Command, type Skill } from "../ext/resources.ts";
 import { ShellHooks } from "../hooks/shell-hooks.ts";
 import { McpManager } from "../mcp/manager.ts";
@@ -59,6 +60,9 @@ export class AgentSession {
   private compaction: CompactionSettings = DEFAULT_COMPACTION;
   private auth: Record<string, string> = {};
   goal?: string;
+  private envBlock = "";
+  private toolsDirty = false;
+  private turn = 0;
 
   constructor(readonly opts: SessionOptions) {}
 
@@ -76,6 +80,7 @@ export class AgentSession {
     if (!model) throw new Error(`Unknown model "${ref}". Try provider/model, e.g. anthropic/claude-opus-5-5, openai/gpt-5, ollama/qwen3-coder.`);
     this.model = model;
 
+    this.envBlock = environmentBlock(o.cwd);
     this.policy = new PermissionPolicy(o.mode ?? this.config.permissionMode ?? "ask", { allow: this.config.permissions?.allow ?? [], deny: this.config.permissions?.deny ?? [] }, o.asker);
     this.hooks = new ShellHooks(this.config.hooks ?? [], o.cwd);
     setClaudeHomeImport(!!this.config.compat?.claudeHome);
@@ -142,7 +147,7 @@ export class AgentSession {
         const model = (def?.model && def.model !== "inherit" && resolveModel(def.model)) || this.model;
         let tools = filterTools([...coreTools(), ...memTools, ...(this.mcp?.getTools() ?? [])], def?.tools);
         if (depth < 2) tools = [...tools, task];
-        const base = buildSystemPrompt({ cwd: this.cwd, tools, subagent: true, mode: this.policy.mode === "plan" ? "plan" : "default" });
+        const base = buildSystemPrompt({ cwd: this.cwd, tools, env: this.envBlock, subagent: true, mode: this.policy.mode === "plan" ? "plan" : "default" });
         return { model, apiKey: apiKeyFor(model, this.auth), tools, systemPrompt: def ? `${base}\n\n# Your role: ${def.name}\n${def.body}` : base, hooks: { beforeToolCall: (c) => this.policy.decide(c) } };
       },
     });
@@ -152,11 +157,15 @@ export class AgentSession {
 
   refreshTools() {
     if (!this.agent) return;
+    // Never change tools/system prompt mid-turn: it breaks the prompt cache and confuses the model.
+    if (this.agent.isRunning) { this.toolsDirty = true; return; }
+    this.toolsDirty = false;
     const tools = this.buildTools();
     this.agent.config.tools = tools;
     this.agent.config.systemPrompt = buildSystemPrompt({
       cwd: this.cwd, tools, skills: this.skills, mode: this.policy.mode === "plan" ? "plan" : "default",
-      extra: [this.opts.systemPromptAppend, this.goal ? `# Active goal\n${this.goal}\nDo not stop until this goal is met or you are blocked.` : ""].filter(Boolean).join("\n\n") || undefined,
+      extra: this.opts.systemPromptAppend || undefined,
+      env: this.envBlock,
     });
   }
 
@@ -207,11 +216,15 @@ export class AgentSession {
     const parts: UserContent[] = [];
     const mem = this.memory && this.config.memory?.autoCapture !== false ? await memoryContext(this.memory, input, this.cwd, this.config.memory?.maxInject ?? 5).catch(() => undefined) : undefined;
     const ruv = await this.ruvnet?.beforePrompt(input).catch(() => undefined);
-    const ctxBlocks = [mem && `<relevant_memories>\n${mem}\n</relevant_memories>`, ruv].filter(Boolean);
+    const goalBlock = this.goal ? `<active_goal>\n${this.goal}\nKeep working until this goal is met or you are genuinely blocked.\n</active_goal>` : undefined;
+    const ctxBlocks = [mem && `<relevant_memories>\n${mem}\n</relevant_memories>`, ruv, goalBlock].filter(Boolean);
     parts.push({ type: "text", text: ctxBlocks.length ? `${ctxBlocks.join("\n")}\n\n${textIn}` : textIn });
     parts.push(...images);
     if (!this.session.title) this.session.setMeta({ title: input.slice(0, 80), model: `${this.model.provider}/${this.model.id}` });
+    if (this.toolsDirty) this.refreshTools();
+    this.agent.state.set("turn", ++this.turn);
     await this.agent.prompt(parts);
+    if (this.toolsDirty) this.refreshTools();
     this.ruvnet?.afterPrompt(input, this.agent.messages);
   }
 
@@ -232,7 +245,21 @@ export class AgentSession {
   }
   setThinking(t: ThinkingLevel) { this.thinking = t; this.agent.config.thinking = t; this.session.setMeta({ thinking: t }); }
   setMode(mode: PermissionMode) { this.policy.mode = mode; this.refreshTools(); }
-  setGoal(goal?: string) { this.goal = goal; this.refreshTools(); }
+  setGoal(goal?: string) { this.goal = goal; }
+
+  /** Revert file changes made by edit/write during the most recent turn that changed files. */
+  undo(): { turn: number; files: string[] } | undefined {
+    const h = this.agent.state.get("fileHistory") as Array<{ turn: number; path: string; content: string | null }> | undefined;
+    if (!h?.length) return undefined;
+    const turn = h[h.length - 1]!.turn;
+    const snaps = h.filter((x) => x.turn === turn);
+    for (const s of snaps) {
+      try { if (s.content === null) rmSync(s.path, { force: true }); else writeFileSync(s.path, s.content); } catch {}
+    }
+    this.agent.state.set("fileHistory", h.filter((x) => x.turn !== turn));
+    (this.agent.state.get("reads") as Map<string, unknown> | undefined)?.clear();
+    return { turn, files: snaps.map((s) => s.path) };
+  }
 
   async compact(focus?: string): Promise<void> {
     if (this.compacting) return;

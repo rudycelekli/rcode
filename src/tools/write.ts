@@ -3,7 +3,7 @@ import { dirname, relative } from "node:path";
 import { z } from "zod";
 import type { Tool } from "../agent/types.ts";
 import { diffStats, unifiedDiff } from "./diff.ts";
-import { checkFresh, markRead, resolvePath, text, withFileLock } from "./util.ts";
+import { checkFresh, markRead, recordPreimage, resolvePath, text, withFileLock } from "./util.ts";
 
 const schema = z.object({
   path: z.string().describe("File path to write"),
@@ -24,6 +24,7 @@ export const writeTool: Tool<typeof schema> = {
       const existed = existsSync(abs);
       if (existed) { const stale = checkFresh(ctx, abs); if (stale) return text(stale, true); }
       const before = existed ? readFileSync(abs, "utf8") : "";
+      recordPreimage(ctx, abs);
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, args.content);
       markRead(ctx, abs);

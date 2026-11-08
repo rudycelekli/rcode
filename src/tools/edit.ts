@@ -3,7 +3,7 @@ import { relative } from "node:path";
 import { z } from "zod";
 import type { Tool } from "../agent/types.ts";
 import { diffStats, unifiedDiff } from "./diff.ts";
-import { checkFresh, markRead, resolvePath, text, withFileLock } from "./util.ts";
+import { checkFresh, markRead, recordPreimage, resolvePath, text, withFileLock } from "./util.ts";
 
 const editSchema = z.object({
   old_text: z.string().describe("Exact text to replace (copy from read output WITHOUT line-number prefixes). Must be unique unless replace_all."),
@@ -52,6 +52,7 @@ export const editTool: Tool<typeof schema> = {
       for (const s of spans) { updated += original.slice(pos, s.start) + s.repl; pos = s.end; }
       updated += original.slice(pos);
       const finalText = bom + (crlf ? updated.replace(/\n/g, "\r\n") : updated);
+      recordPreimage(ctx, abs);
       writeFileSync(abs, finalText);
       markRead(ctx, abs);
       const rel = relative(ctx.cwd, abs) || abs;
