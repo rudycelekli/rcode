@@ -30,7 +30,7 @@ export class WebChannel implements ChannelAdapter {
     for (const ws of this.sockets.get(conv) ?? []) { try { ws.send(s); } catch {} }
   }
 
-  async start(onMessage: (m: IncomingMessage) => void, onApproval: (id: string, d: "allow" | "allow-session" | "deny", userId: string) => void) {
+  async start(onMessage: (m: IncomingMessage) => void, onApproval: (id: string, d: "allow" | "allow-session" | "deny", userId: string, conv: string) => void) {
     const self = this;
     this.server = Bun.serve({
       port: this.port,
@@ -39,6 +39,9 @@ export class WebChannel implements ChannelAdapter {
         const url = new URL(req.url);
         if (!self.authed(url.searchParams.get("token"))) return new Response("rcode gateway: unauthorized (missing or wrong ?token=)", { status: 401 });
         if (url.pathname === "/ws") {
+          // Reject cross-site WebSocket hijacking: Origin must match the Host we serve.
+          const origin = req.headers.get("origin");
+          if (origin && new URL(origin).host !== req.headers.get("host")) return new Response("bad origin", { status: 403 });
           const conv = url.searchParams.get("c") || "web";
           return server.upgrade(req, { data: { conv } }) ? undefined : new Response("upgrade failed", { status: 400 });
         }
@@ -50,7 +53,7 @@ export class WebChannel implements ChannelAdapter {
         message(ws: any, raw) {
           let m: any; try { m = JSON.parse(String(raw)); } catch { return; }
           if (m.type === "prompt" && typeof m.text === "string") onMessage({ channel: "web", conversationId: `web:${ws.data.conv}`, userId: "web-owner", text: m.text, images: m.images });
-          else if (m.type === "approval") onApproval(String(m.id), m.decision, "web-owner");
+          else if (m.type === "approval") onApproval(String(m.id), m.decision, "web-owner", `web:${ws.data.conv}`);
         },
       },
     });
@@ -85,7 +88,7 @@ button.s{background:var(--acc);color:#111;border:0;border-radius:12px;padding:0 
 </style></head><body><header><b>rcode</b><span>remote</span><span id="st">connecting…</span></header><div id="log"></div>
 <form id="f"><textarea id="t" placeholder="Message rcode…  (/new /stop /status /mode /model /undo)" rows="1"></textarea><button class="s">Send</button></form>
 <script>
-const q=new URLSearchParams(location.search),tok=q.get('token'),c=q.get('c')||'web';const log=document.getElementById('log'),st=document.getElementById('st');let ws,streams={};
+const q=new URLSearchParams(location.search),tok=q.get('token')||sessionStorage.getItem('rt'),c=q.get('c')||'web';if(q.get('token')){sessionStorage.setItem('rt',q.get('token'));history.replaceState(null,'',location.pathname+(q.get('c')?'?c='+encodeURIComponent(c):''))}const log=document.getElementById('log'),st=document.getElementById('st');let ws,streams={};
 function add(cls,text){const d=document.createElement('div');d.className='m '+cls;d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
 function conn(){ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws?token='+encodeURIComponent(tok)+'&c='+encodeURIComponent(c));
 ws.onopen=()=>st.textContent='connected';ws.onclose=()=>{st.textContent='reconnecting…';setTimeout(conn,1500)};
@@ -93,7 +96,7 @@ ws.onmessage=e=>{const m=JSON.parse(e.data);
  if(m.type==='stream'){(streams[m.id]||(streams[m.id]=add('a',''))).textContent=m.text||'…';log.scrollTop=log.scrollHeight}
  else if(m.type==='final'){(streams[m.id]||add('a','')).textContent=m.text;delete streams[m.id];st.textContent='connected'}
  else if(m.type==='message')add('a',m.text);else if(m.type==='typing')st.textContent='working…';
- else if(m.type==='approval'){const d=add('ap','⚠️ '+m.title+'\\n('+m.reason+')');for(const[k,l]of[['allow','Allow'],['allow-session','Always'],['deny','Deny']]){const b=document.createElement('button');b.textContent=l;b.onclick=()=>{ws.send(JSON.stringify({type:'approval',id:m.id,decision:k}));d.append(' → '+l);d.querySelectorAll('button').forEach(x=>x.remove())};d.appendChild(b)}}}}
+ else if(m.type==='approval'){const d=add('ap','⚠️ '+m.title+'\\n('+m.reason+')'+(m.detail?'\\n\\n'+m.detail:''));for(const[k,l]of[['allow','Allow'],['allow-session','Always'],['deny','Deny']]){const b=document.createElement('button');b.textContent=l;b.onclick=()=>{ws.send(JSON.stringify({type:'approval',id:m.id,decision:k}));d.append(' → '+l);d.querySelectorAll('button').forEach(x=>x.remove())};d.appendChild(b)}}}}
 conn();const t=document.getElementById('t');t.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('f').requestSubmit()}});
 document.getElementById('f').onsubmit=e=>{e.preventDefault();const v=t.value.trim();if(!v)return;add('u',v);ws.send(JSON.stringify({type:'prompt',text:v}));t.value=''};
 </script></body></html>`;

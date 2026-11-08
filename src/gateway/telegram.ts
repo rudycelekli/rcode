@@ -13,20 +13,32 @@ export class TelegramChannel implements ChannelAdapter {
   readonly name = "telegram";
   private offset = 0;
   private running = false;
-  constructor(private token: string, private isAllowed: (userId: string) => boolean, private onPairRequest: (code: string, userId: string, userName?: string) => void) {}
+  private ctl = new AbortController();
+  private lastPairReply = new Map<string, number>();
+  constructor(
+    private token: string,
+    private isAllowed: (userId: string) => boolean,
+    /** Returns the pairing code to show (or undefined when rate-limited / too many pending). */
+    private onPairRequest: (userId: string, userName?: string) => string | undefined,
+    private offsetStore?: { get: () => number; set: (n: number) => void },
+  ) {}
 
   private async call<T = any>(method: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     const res = await fetch(`${API}/bot${this.token}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
     const j: any = await res.json().catch(() => ({ ok: false, description: `HTTP ${res.status}` }));
     if (!j.ok) {
       if (j.parameters?.retry_after) { await Bun.sleep(j.parameters.retry_after * 1000); return this.call(method, body, signal); }
+      if (/message is not modified/.test(j.description ?? "")) return undefined as T;
       throw new Error(`telegram ${method}: ${j.description}`);
     }
     return j.result as T;
   }
 
-  async start(onMessage: (m: IncomingMessage) => void, onApproval: (id: string, d: "allow" | "allow-session" | "deny", userId: string) => void) {
+  async start(onMessage: (m: IncomingMessage) => void, onApproval: (id: string, d: "allow" | "allow-session" | "deny", userId: string, conv: string) => void) {
     const me = await this.call("getMe", {});
+    // A leftover webhook makes getUpdates fail with 409 — long polling requires it gone.
+    await this.call("deleteWebhook", { drop_pending_updates: false }).catch(() => {});
+    this.offset = this.offsetStore?.get() ?? 0;
     await this.call("setMyCommands", { commands: [
       { command: "new", description: "Start a fresh session" }, { command: "stop", description: "Interrupt the agent" },
       { command: "status", description: "Model, mode, usage" }, { command: "mode", description: "ask | auto-edit | plan" },
@@ -37,19 +49,22 @@ export class TelegramChannel implements ChannelAdapter {
     void (async () => {
       while (this.running) {
         try {
-          const updates: any[] = await this.call("getUpdates", { offset: this.offset, timeout: 50, allowed_updates: ["message", "callback_query"] });
+          const updates: any[] = await this.call("getUpdates", { offset: this.offset, timeout: 50, limit: 100, allowed_updates: ["message", "callback_query"] }, this.ctl.signal);
           for (const u of updates) {
             this.offset = u.update_id + 1;
+            this.offsetStore?.set(this.offset);
             if (u.callback_query) {
               const cq = u.callback_query;
               const from = String(cq.from.id);
               await this.call("answerCallbackQuery", { callback_query_id: cq.id }).catch(() => {});
               if (!this.isAllowed(from)) continue;
-              const [kind, id, decision] = String(cq.data ?? "").split(":");
-              if (kind === "ap" && id && decision) {
-                onApproval(id, decision as any, from);
-                const label = decision === "deny" ? "❌ Denied" : decision === "allow-session" ? "✅ Always allowed" : "✅ Allowed";
-                await this.call("editMessageText", { chat_id: cq.message.chat.id, message_id: cq.message.message_id, text: `${cq.message.text}\n\n${label}` }).catch(() => {});
+              const [kind, d, id] = String(cq.data ?? "").split(":");
+              const decision = d === "a" ? "allow" : d === "s" ? "allow-session" : d === "d" ? "deny" : undefined;
+              if (kind === "ap1" && id && decision) {
+                const conv = cq.message?.message_thread_id ? `${cq.message.chat.id}:${cq.message.message_thread_id}` : String(cq.message?.chat?.id);
+                onApproval(id, decision, from, conv);
+                const label = decision === "deny" ? "❌ Denied" : decision === "allow-session" ? "♾ Allowed for session" : "✅ Allowed once";
+                await this.call("editMessageText", { chat_id: cq.message.chat.id, message_id: cq.message.message_id, text: `${cq.message.text}\n\n${label}`, reply_markup: { inline_keyboard: [] } }).catch(() => {});
               }
               continue;
             }
@@ -57,8 +72,13 @@ export class TelegramChannel implements ChannelAdapter {
             if (!m) continue;
             const from = String(m.from?.id ?? "");
             if (!this.isAllowed(from)) {
-              const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-              this.onPairRequest(code, from, m.from?.username);
+              // Only answer strangers in private chats, and at most once per 10 minutes per user.
+              if (m.chat?.type !== "private") continue;
+              const last = this.lastPairReply.get(from) ?? 0;
+              if (Date.now() - last < 10 * 60_000) continue;
+              this.lastPairReply.set(from, Date.now());
+              const code = this.onPairRequest(from, m.from?.username);
+              if (!code) continue;
               console.log(`[gateway] pairing request from ${m.from?.username ?? from} — approve with: rcode gateway pair ${code}`);
               await this.call("sendMessage", { chat_id: m.chat.id, text: `🔒 This rcode instance is private.\nPairing code: ${code}\nAsk the owner to run: rcode gateway pair ${code}` }).catch(() => {});
               continue;
@@ -87,7 +107,7 @@ export class TelegramChannel implements ChannelAdapter {
     })();
   }
 
-  async stop() { this.running = false; }
+  async stop() { this.running = false; this.ctl.abort(); }
 
   private chat(conv: string) { const [chat_id, thread] = conv.split(":"); return { chat_id, ...(thread ? { message_thread_id: Number(thread) } : {}) }; }
 
@@ -123,14 +143,15 @@ export class TelegramChannel implements ChannelAdapter {
   }
 
   async askApproval(conv: string, req: ApprovalRequest) {
+    const detail = req.detail ? `\n\n${req.detail.slice(0, 3200)}` : "";
     await this.call("sendMessage", {
       ...this.chat(conv),
-      text: `⚠️ Permission needed (${req.reason})\n${req.title.slice(0, 3000)}`,
-      reply_markup: { inline_keyboard: [[
-        { text: "✅ Allow", callback_data: `ap:${req.id}:allow` },
-        { text: "♾ Always", callback_data: `ap:${req.id}:allow-session` },
-        { text: "❌ Deny", callback_data: `ap:${req.id}:deny` },
-      ]] },
+      text: `⚠️ Permission needed (${req.reason})\n${req.title.slice(0, 400)}${detail}`,
+      link_preview_options: { is_disabled: true },
+      reply_markup: { inline_keyboard: [
+        [{ text: "✅ Allow once", callback_data: `ap1:a:${req.id}` }, { text: "♾ Allow for session", callback_data: `ap1:s:${req.id}` }],
+        [{ text: "❌ Deny", callback_data: `ap1:d:${req.id}` }],
+      ] },
     });
   }
 }

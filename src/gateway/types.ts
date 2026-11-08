@@ -12,7 +12,7 @@ export interface IncomingMessage {
   messageId?: string;
 }
 
-export interface ApprovalRequest { id: string; title: string; reason: string }
+export interface ApprovalRequest { id: string; title: string; reason: string; /** Exact command / arguments being approved. */ detail?: string }
 
 export interface OutgoingHandle {
   /** Replace the message text (streaming). Adapters rate-limit internally. */
@@ -23,7 +23,7 @@ export interface OutgoingHandle {
 
 export interface ChannelAdapter {
   readonly name: string;
-  start(onMessage: (m: IncomingMessage) => void, onApproval: (approvalId: string, decision: "allow" | "allow-session" | "deny", userId: string) => void): Promise<void>;
+  start(onMessage: (m: IncomingMessage) => void, onApproval: (approvalId: string, decision: "allow" | "allow-session" | "deny", userId: string, conversationId: string) => void): Promise<void>;
   stop(): Promise<void>;
   /** Start a streaming reply in a conversation. */
   reply(conversationId: string, initial: string): Promise<OutgoingHandle>;
