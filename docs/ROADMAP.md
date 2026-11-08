@@ -19,18 +19,20 @@ Distilled from the research in [`docs/research/`](research) (pi, oh-my-pi, jcode
 - Safety nets: verified-done gate (agent must verify or admit it didn't), git checkpoints before every prompt (`/undo` restores bash-made changes too, index untouched).
 - Memory v2: background lesson capture from corrections / recovered errors / busy turns, session-start memory block, `/forget`.
 - `/context` breakdown (system sections, per-tool schema cost, conversation by type); lazy MCP loading (`mcp_search`/`mcp_call`) above 30 MCP tools.
+- Repo map: zero-dependency symbol extraction (~15 languages) + personalized PageRank over the reference graph with query relevance; `read` outline mode and "definitions further down" hints.
+- Memory v3: `/promote` memories into AGENTS.md conventions (shareable via git); opt-in on-device MiniLM embeddings through ruvector with cached vectors.
 - Frontends: TUI (scrollback-native, differential live region, completions, paste collapsing), print/JSON, JSONL RPC with approvals, ACP server.
 
 ## P0 — next
 
-- **Repo map** (tree-sitter WASM + PageRank) and outline reads for large files.
-- **Memory v3**: progressive-disclosure recall (search → timeline → get), review-gated promotion of lessons to skills (`/skillify`), ruvector ONNX embeddings opt-in.
+- **Gateway round 2**: owner/user roles, one-tap pairing link + QR, Slack (Socket Mode) and Discord, voice notes, single-instance lock.
+- **OAuth / subscription login** where providers officially support it.
 - **Gateway, round 2** (remote-gateway.md): owner vs. user roles, `rcode gateway link` one-tap pairing (t.me deep link + QR), Slack (Socket Mode) and Discord channels, voice notes, control socket + single-instance lock, cron jobs that cannot schedule more cron jobs.
 - **OAuth / subscription login** for providers that officially support it; `rcode login` with browser flow.
 
 ## P1
 
-- `repo_map` tool (tree-sitter WASM + PageRank) and outline mode for large reads.
+- tree-sitter WASM backend for the repo map (exact parsing where installed).
 - Session hibernation + daemon mode for many concurrent agents (jcode's architecture), file-touch bus across agents.
 - Beacon-compatible JSONL telemetry (local only) and a rule-based PreToolUse guard.
 - Guard modes (freeze-tests, no-skip, strict-tdd) as native policy, not just prompt text.
