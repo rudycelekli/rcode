@@ -16,15 +16,16 @@ Distilled from the research in [`docs/research/`](research) (pi, oh-my-pi, jcode
 - Context efficiency: content-addressed artifact store (`artifact://`), type-aware output shaping (errors + head/tail, JSON condensing, progress-bar cleanup), stale-output masking, cache-stable prompt layout, two rolling cache breakpoints.
 - Browser & desktop: `browser` (agent-browser) and `desktop` (agent-desktop) tools with per-action permissions and secret guards; skills; setup installs them.
 - Remote: `rcode gateway` — Telegram (pairing, approval buttons, streaming edits) + token-protected web UI, per-conversation sessions, chat commands, schedules, launchd/systemd service.
+- Safety nets: verified-done gate (agent must verify or admit it didn't), git checkpoints before every prompt (`/undo` restores bash-made changes too, index untouched).
+- Memory v2: background lesson capture from corrections / recovered errors / busy turns, session-start memory block, `/forget`.
+- `/context` breakdown (system sections, per-tool schema cost, conversation by type); lazy MCP loading (`mcp_search`/`mcp_call`) above 30 MCP tools.
 - Frontends: TUI (scrollback-native, differential live region, completions, paste collapsing), print/JSON, JSONL RPC with approvals, ACP server.
 
 ## P0 — next
 
-- **Context efficiency, round 2**: `/context` breakdown with calibrated token counts, repo map, lazy MCP tool loading.
+- **Repo map** (tree-sitter WASM + PageRank) and outline reads for large files.
+- **Memory v3**: progressive-disclosure recall (search → timeline → get), review-gated promotion of lessons to skills (`/skillify`), ruvector ONNX embeddings opt-in.
 - **Gateway, round 2** (remote-gateway.md): owner vs. user roles, `rcode gateway link` one-tap pairing (t.me deep link + QR), Slack (Socket Mode) and Discord channels, voice notes, control socket + single-instance lock, cron jobs that cannot schedule more cron jobs.
-- **Memory v2** (ecosystem-a.md, after claude-mem): background observer capturing typed observations from tool events, budgeted session-start injection, progressive-disclosure tools (search → timeline → get), review-gated lesson promotion to skills.
-- **Verified-done gate**: the agent can't claim completion after edits without a verification run (tests/typecheck) or an explicit "unverified" statement.
-- **Git checkpoints** (t3code-style hidden refs) so `/undo` also covers bash-made changes.
 - **OAuth / subscription login** for providers that officially support it; `rcode login` with browser flow.
 
 ## P1
