@@ -199,7 +199,8 @@ export class Agent {
     try { summary = parsed.success ? tool.summarize?.(parsed.data) : undefined; } catch {}
     this.emit({ type: "tool_start", toolCallId: tc.id, name: tc.name, args: tc.arguments, summary });
     if (!parsed.success) {
-      return finish(errorResult(tc, `Invalid arguments for ${tc.name}:\n${z.prettifyError(parsed.error)}\nReceived: ${JSON.stringify(tc.arguments).slice(0, 500)}`));
+      const schema = toolSchema(tool).parameters as { required?: string[] };
+      return finish(errorResult(tc, `Invalid arguments for ${tc.name}:\n${z.prettifyError(parsed.error)}\nReceived: ${JSON.stringify(tc.arguments).slice(0, 500)}\nRequired fields: ${(schema.required ?? []).join(", ") || "(none)"}. Expected input schema: ${JSON.stringify(schema).slice(0, 1500)}\nRetry the call with corrected arguments.`));
     }
     if (signal.aborted) return finish(errorResult(tc, "Aborted by user."));
 

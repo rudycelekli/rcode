@@ -100,7 +100,7 @@ export function buildSystemPrompt(o: PromptOptions): string {
   if (o.mode === "plan") parts.push(PLAN_MODE);
   if (o.subagent) parts.push(SUBAGENT);
   if (o.skills?.length) {
-    parts.push(`\n# Skills\nSpecialized instructions are available. When a task matches a skill, read its SKILL.md with the read tool first, then follow it.\n<skills>\n${o.skills.map((s) => `- ${s.name}: ${s.description} (${s.path})`).join("\n")}\n</skills>`);
+    parts.push(`\n# Skills\nSpecialized instructions are available. When a task matches a skill, read it first with the read tool (path skill://<name>), then follow it. Skill paths are not project files.\n<skills>\n${o.skills.map((s) => `- ${s.name}: ${s.description} (read skill://${s.name})`).join("\n")}\n</skills>`);
   }
   if (o.extra) parts.push("\n" + o.extra);
   // Dynamic context last for prompt-cache stability.

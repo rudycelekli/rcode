@@ -49,6 +49,8 @@ function roots(cwd: string, kind: "skills" | "commands" | "agents", extra: strin
 }
 
 export interface Skill { name: string; description: string; path: string; body: string }
+/** skill://<name> → SKILL.md path (so prompts never show install paths that weak models copy). */
+export const skillPaths = new Map<string, string>();
 export function loadSkills(cwd: string, extra?: string[]): Skill[] {
   const map = new Map<string, Skill>();
   for (const root of roots(cwd, "skills", extra)) {
@@ -60,6 +62,7 @@ export function loadSkills(cwd: string, extra?: string[]): Skill[] {
       map.set(name, { name, description: String(meta.description ?? body.split("\n").find((l) => l.trim()) ?? "").slice(0, 300), path: file, body });
     }
   }
+  for (const sk of map.values()) skillPaths.set(sk.name, sk.path);
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 

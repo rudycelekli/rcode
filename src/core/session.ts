@@ -15,6 +15,7 @@ import { ShellHooks } from "../hooks/shell-hooks.ts";
 import { McpManager } from "../mcp/manager.ts";
 import { createLazyMcpTools } from "../mcp/lazy.ts";
 import { createMemoryTools, getMemory, memoryContext, type MemoryProvider } from "../memory/index.ts";
+import { captureLessons, sessionMemoryBlock } from "../memory/capture.ts";
 import { PermissionPolicy, type Asker, type PermissionMode } from "../permissions/policy.ts";
 import { contextTokens, DEFAULT_COMPACTION, findCutPoint, shouldCompact, summarize, type CompactionSettings } from "../session/compaction.ts";
 import { Session } from "../session/store.ts";
@@ -65,6 +66,7 @@ export class AgentSession {
   private auth: Record<string, string> = {};
   goal?: string;
   private envBlock = "";
+  private memoryBlock?: string;
   private toolsDirty = false;
   private turn = 0;
   readonly verifyGate = new VerifyGate();
@@ -102,7 +104,12 @@ export class AgentSession {
 
     if (!o.minimal) {
       if (this.config.memory?.enabled !== false && this.config.memory?.provider !== "off") {
-        getMemory((this.config.memory?.provider as any) ?? "auto").then((m) => (this.memory = m)).catch(() => {});
+        getMemory((this.config.memory?.provider as any) ?? "auto").then(async (m) => {
+          this.memory = m;
+          // Session-start memory is computed once so the system prompt stays cache-stable for the session.
+          this.memoryBlock = await sessionMemoryBlock(m, this.cwd).catch(() => undefined);
+          if (this.memoryBlock) this.refreshTools();
+        }).catch(() => {});
       }
       const servers = { ...(this.config.mcpServers ?? {}) };
       this.ruvnet = new RuvnetIntegration(this.config, o.cwd);
@@ -181,6 +188,7 @@ export class AgentSession {
       cwd: this.cwd, tools, skills: this.skills, mode: this.policy.mode === "plan" ? "plan" : "default",
       extra: this.opts.systemPromptAppend || undefined,
       env: this.envBlock,
+      memory: this.memoryBlock,
     });
   }
 
@@ -236,7 +244,9 @@ export class AgentSession {
       if (r.context) textIn += `\n\n<hook_context>\n${r.context}\n</hook_context>`;
     }
     const parts: UserContent[] = [];
-    const mem = this.memory && this.config.memory?.autoCapture !== false ? await memoryContext(this.memory, input, this.cwd, this.config.memory?.maxInject ?? 5).catch(() => undefined) : undefined;
+    let mem = this.memory ? await memoryContext(this.memory, input, this.cwd, this.config.memory?.maxInject ?? 5).catch(() => undefined) : undefined;
+    // Don't repeat memories already present in the session-start block.
+    if (mem && this.memoryBlock) mem = mem.split("\n").filter((l) => !this.memoryBlock!.includes(l.replace(/^- /, ""))).join("\n") || undefined;
     const ruv = await this.ruvnet?.beforePrompt(input).catch(() => undefined);
     const goalBlock = this.goal ? `<active_goal>\n${this.goal}\nKeep working until this goal is met or you are genuinely blocked.\n</active_goal>` : undefined;
     const ctxBlocks = [mem && `<relevant_memories>\n${mem}\n</relevant_memories>`, ruv, goalBlock].filter(Boolean);
@@ -247,8 +257,16 @@ export class AgentSession {
     this.agent.state.set("turn", ++this.turn);
     this.checkpoints?.snapshot(this.turn);
     this.verifyGate.reset();
+    const startIdx = this.agent.messages.length;
     await this.agent.prompt(parts);
     if (this.toolsDirty) this.refreshTools();
+    if (this.memory && this.config.memory?.autoCapture !== false && !this.opts.minimal) {
+      const turn = this.agent.messages.slice(startIdx);
+      const small = (this.config.smallModel && resolveModel(this.config.smallModel)) || this.model;
+      void captureLessons({ model: small, apiKey: apiKeyFor(small, this.auth), memory: this.memory, project: this.cwd, turn })
+        .then((n) => { if (n) this.emit({ type: "notice", level: "info", text: `🧠 learned ${n} thing${n > 1 ? "s" : ""} for next time (/memory to review)` }); })
+        .catch(() => {});
+    }
     this.ruvnet?.afterPrompt(input, this.agent.messages);
   }
 

@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import type { ToolContext, ToolResult } from "../agent/types.ts";
 import { shapeOutput } from "../context/shape.ts";
 import { artifactPath } from "../context/artifacts.ts";
+import { skillPaths } from "../ext/resources.ts";
 
 export const MAX_LINES = 2000;
 export const MAX_BYTES = 50 * 1024;
@@ -12,6 +13,7 @@ export const MAX_LINE_CHARS = 2000;
 export function resolvePath(cwd: string, p: string): string {
   const art = artifactPath(p);
   if (art) return art;
+  if (p.startsWith("skill://")) { const sp = skillPaths.get(p.slice(8).replace(/\/SKILL\.md$/i, "")); if (sp) return sp; }
   if (p.startsWith("~/")) p = join(homedir(), p.slice(2));
   return isAbsolute(p) ? p : resolve(cwd, p);
 }

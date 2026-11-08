@@ -245,3 +245,18 @@ describe("context efficiency", () => {
     expect(maskStale(recentOnly)).toBe(recentOnly); // within the protected recent window → untouched
   });
 });
+
+describe("memory capture", () => {
+  test("worthCapturing triggers on corrections and busy turns, extraction stores lessons", async () => {
+    const { worthCapturing, captureLessons } = await import("../src/memory/capture.ts");
+    const u = (t: string) => ({ role: "user" as const, content: [{ type: "text" as const, text: t }], timestamp: 1 });
+    expect(worthCapturing([u("fix the typo")])).toBe(false);
+    expect(worthCapturing([u("no, always use pnpm instead of npm")])).toBe(true);
+    fauxReset();
+    fauxScript('[{"text":"This project uses pnpm, never npm.","kind":"preference","scope":"project"},{"text":"api_key=sk-123456789012345","kind":"fact"}]');
+    const m = new FlatMemory(join(tmp(), "m.jsonl")); await m.init();
+    const n = await captureLessons({ model, memory: m, project: "/p", turn: [u("no, always use pnpm instead of npm")] });
+    expect(n).toBe(1); // secret-looking item dropped
+    expect((await m.list())[0]!.text).toContain("pnpm");
+  });
+});
