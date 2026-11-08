@@ -26,7 +26,7 @@ interface PendingPerm { title: string; reason: string; resolve: (d: "allow" | "a
 
 const BUILTINS: Array<[string, string]> = [
   ["help", "Show commands and keys"], ["model", "Switch model: /model <ref> (no arg lists)"], ["thinking", "Set reasoning: off|low|medium|high|xhigh|max"],
-  ["mode", "Approval mode: ask|auto-edit|full|plan"], ["plan", "Toggle plan mode (read-only)"], ["goal", "Set a goal the agent must reach before stopping"],
+  ["mode", "Approval mode: ask|auto-edit|full|plan"], ["plan", "Toggle plan mode (read-only)"], ["guard", "Toggle guards: freeze-tests | no-skip | strict-tdd"], ["goal", "Set a goal the agent must reach before stopping"],
   ["compact", "Summarize older context: /compact [focus]"], ["new", "Start a fresh session"], ["resume", "Resume a recent session"], ["fork", "Fork this session into a new branch file"],
   ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["context", "Where the context window goes (by section, tool, message type)"], ["mcp", "MCP server status"],
   ["memory", "Search memory: /memory <query>"], ["remember", "Save a memory: /remember <text>"], ["forget", "Delete a memory: /forget <id>"], ["promote", "Promote memories to AGENTS.md: /promote <id…>"], ["tools", "List available tools"], ["skills", "List skills"],
@@ -66,7 +66,7 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
     const pct = Math.min(100, Math.round((ctx / m.contextWindow) * 100));
     const u = session.agent.usage;
     const modeColor = session.mode === "plan" ? a.cyan : session.mode === "full" ? a.red : session.mode === "auto-edit" ? a.yellow : a.green;
-    const left = `${a.accent("rcode")} ${a.gray("·")} ${m.id} ${a.gray(session.thinking)} ${a.gray("·")} ${modeColor(session.mode)}${session.goal ? a.gray(" · ") + a.magenta("goal") : ""}`;
+    const left = `${a.accent("rcode")} ${a.gray("·")} ${m.id} ${a.gray(session.thinking)} ${a.gray("·")} ${modeColor(session.mode)}${session.goal ? a.gray(" · ") + a.magenta("goal") : ""}${session.guards.list().length ? a.gray(" · ") + a.cyan("guard:" + session.guards.list().join("+")) : ""}${session.sandboxStatus !== "off" ? a.gray(" · sandboxed") : ""}`;
     const right = a.gray(`ctx ${pct}% · $${u.cost.total.toFixed(3)} · ${basename(session.cwd)}`);
     const gap = Math.max(1, cols() - width(left) - width(right));
     return left + " ".repeat(gap) + right;
@@ -256,6 +256,13 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
         return true;
       case "thinking": if (THINK.includes(arg as any) || arg === "minimal") { session.setThinking(arg as ThinkingLevel); say(a.gray(`thinking → ${arg}`)); } else say(a.gray(`thinking: ${session.thinking} (off|low|medium|high|xhigh|max)`)); return true;
       case "mode": if (MODES.includes(arg as any)) { session.setMode(arg as PermissionMode); say(a.gray(`mode → ${arg}`)); } else say(a.gray(`mode: ${session.mode} (ask|auto-edit|full|plan)`)); return true;
+      case "guard": {
+        const { GUARDS } = await import("../core/guards.ts");
+        if (GUARDS.includes(arg as any)) session.guards.toggle(arg as any);
+        else if (arg) { say(a.red(`unknown guard ${arg} (${GUARDS.join(" | ")})`)); return true; }
+        say(a.gray(`guards: ${session.guards.list().join(", ") || "none"}`));
+        return true;
+      }
       case "plan": session.setMode(session.mode === "plan" ? "auto-edit" : "plan"); say(a.gray(`mode → ${session.mode}`)); return true;
       case "goal": session.setGoal(arg || undefined); say(a.gray(arg ? `goal set: ${arg}` : "goal cleared")); if (arg) void send(`Work toward this goal until it is met: ${arg}`); return true;
       case "compact": say(a.gray("compacting…")); try { await session.compact(arg || undefined); } catch (e) { say(a.red((e as Error).message)); } return true;

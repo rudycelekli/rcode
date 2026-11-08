@@ -40,6 +40,12 @@ export interface RcodeConfig {
   checkpoints?: boolean;
   /** Above this many MCP tools, expose them via mcp_search/mcp_call instead of inline schemas. Default 30. */
   mcpLazyThreshold?: number;
+  /** OS sandbox for bash: "auto" (on except in full mode), "always", "off". Default auto. */
+  sandbox?: "auto" | "always" | "off";
+  /** Allow network inside the sandbox. Default false (localhost only). */
+  sandboxNetwork?: boolean;
+  /** Guard modes active at startup: "freeze-tests" | "no-skip" | "strict-tdd". */
+  guards?: Array<"freeze-tests" | "no-skip" | "strict-tdd">;
   /** Force optional tools on/off (default: on when their native CLI is installed). */
   tools?: { browser?: boolean; desktop?: boolean };
   theme?: string;

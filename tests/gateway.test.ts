@@ -42,7 +42,7 @@ describe("gateway", () => {
     const cwd = mkdtempSync(join(tmpdir(), "rcode-gw-cwd-"));
     mkdirSync(join(cwd, ".rcode"), { recursive: true });
     writeFileSync(join(cwd, ".rcode", "config.json"), JSON.stringify({ gateway: { web: { token: "tok_test_123456" } } }));
-    fauxScript({ tools: [{ name: "bash", args: { command: "touch approved.txt" } }] }, "done");
+    fauxScript({ tools: [{ name: "write", args: { path: "approved.txt", content: "ok" } }] }, "done (unverified: no tests here)");
     const port = 17000 + Math.floor(Math.random() * 2000);
     void runGateway({ cwd, model: "faux/x", port, web: true, mode: "ask" });
     await Bun.sleep(400);
@@ -53,14 +53,14 @@ describe("gateway", () => {
     a.send(JSON.stringify({ type: "prompt", text: "make the file" }));
     let approval: any;
     for (let i = 0; i < 50 && !approval; i++) { await Bun.sleep(50); approval = msgsA.find((m) => m.type === "approval"); }
-    expect(approval?.detail).toContain("touch approved.txt");
+    expect(approval?.detail).toContain("approved.txt");
     b.send(JSON.stringify({ type: "approval", id: approval.id, decision: "allow" })); // wrong conversation → ignored
     await Bun.sleep(300);
     expect(await Bun.file(join(cwd, "approved.txt")).exists()).toBe(false);
     a.send(JSON.stringify({ type: "approval", id: approval.id, decision: "allow" }));
     let final: any;
     for (let i = 0; i < 60 && !final; i++) { await Bun.sleep(50); final = msgsA.find((m) => m.type === "final"); }
-    expect(final?.text).toBe("done");
+    expect(final?.text).toBe("done (unverified: no tests here)");
     expect(await Bun.file(join(cwd, "approved.txt")).exists()).toBe(true);
     const unauth = await fetch(`http://127.0.0.1:${port}/`);
     expect(unauth.status).toBe(401);

@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { z } from "zod";
 import type { Tool, ToolContext } from "../agent/types.ts";
 import { text, truncateTail } from "./util.ts";
+import { looksSandboxBlocked, wrapCommand, type SandboxPolicy } from "./sandbox.ts";
 
 interface Job { id: string; command: string; proc: ChildProcess; output: string; readPos: number; exitCode: number | null; startedAt: number }
 const jobs = new Map<string, Job>();
@@ -14,14 +15,23 @@ let jobSeq = 0;
 
 function shell(): string { return process.env.RCODE_SHELL ?? (process.platform === "win32" ? "cmd.exe" : Bun.which("bash") ?? "/bin/sh"); }
 
-function start(command: string, cwd: string): ChildProcess {
+function start(command: string, cwd: string, sandbox?: SandboxPolicy): ChildProcess & { sandboxed?: boolean } {
   const isWin = process.platform === "win32";
-  return spawn(shell(), isWin ? ["/c", command] : ["-c", command], {
+  const w = isWin ? { bin: shell(), args: ["/c", command], sandboxed: false } : wrapCommand(shell(), command, cwd, sandbox ?? { enabled: false, network: true });
+  const p: ChildProcess & { sandboxed?: boolean } = spawn(w.bin, w.args, {
     cwd,
     detached: !isWin,
     env: { ...process.env, RCODE: "1", GIT_PAGER: "cat", PAGER: "cat", TERM: "dumb", CI: process.env.CI ?? "", GIT_TERMINAL_PROMPT: "0" },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  p.sandboxed = w.sandboxed;
+  return p;
+}
+
+/** Sandbox policy for a call: the session puts the active policy in ctx.state; `unsandboxed` (approved) escapes it. */
+function policyFor(ctx: Pick<ToolContext, "state">, unsandboxed?: boolean): SandboxPolicy | undefined {
+  const p = ctx.state.get("sandbox") as SandboxPolicy | undefined;
+  return p && p.enabled && !unsandboxed ? p : undefined;
 }
 
 function killTree(p: ChildProcess) {
@@ -35,6 +45,7 @@ const schema = z.object({
   timeout: z.number().int().min(1).max(3600).optional().describe("Timeout in seconds (default 120)"),
   background: z.boolean().optional().describe("Run in background (dev servers, watchers, long builds). Returns a job id; check with bash_output."),
   description: z.string().optional().describe("5-10 word description of what this does"),
+  unsandboxed: z.boolean().optional().describe("Run outside rcode's sandbox (network + writes outside the project). Requires user approval — only use when a sandboxed run failed for that reason."),
 });
 
 export const bashTool: Tool<typeof schema> = {
@@ -45,11 +56,11 @@ export const bashTool: Tool<typeof schema> = {
   schema,
   concurrency: "exclusive",
   effects: { runsProcess: true },
-  summarize: (a) => a.command.length > 120 ? a.command.slice(0, 117) + "…" : a.command,
+  summarize: (a) => (a.unsandboxed ? "[unsandboxed] " : "") + (a.command.length > 120 ? a.command.slice(0, 117) + "…" : a.command),
   async execute(args, ctx) {
     if (args.background) {
       const id = `job${++jobSeq}`;
-      const proc = start(args.command, ctx.cwd);
+      const proc = start(args.command, ctx.cwd, policyFor(ctx, args.unsandboxed));
       const job: Job = { id, command: args.command, proc, output: "", readPos: 0, exitCode: null, startedAt: Date.now() };
       const onData = (d: Buffer) => { job.output += d.toString(); if (job.output.length > 4_000_000) { job.output = job.output.slice(-2_000_000); job.readPos = 0; } };
       proc.stdout?.on("data", onData); proc.stderr?.on("data", onData);
@@ -60,13 +71,13 @@ export const bashTool: Tool<typeof schema> = {
       job.readPos = Math.min(job.output.length, 4000);
       return text(`Started background job ${id} (pid ${proc.pid}).${job.exitCode !== null ? ` It already exited with code ${job.exitCode}.` : ""}\n${initial}`, false, { jobId: id });
     }
-    return runForeground(args.command, ctx, (args.timeout ?? 120) * 1000);
+    return runForeground(args.command, ctx, (args.timeout ?? 120) * 1000, policyFor(ctx, args.unsandboxed));
   },
 };
 
-export function runForeground(command: string, ctx: Pick<ToolContext, "cwd" | "signal" | "onUpdate">, timeoutMs: number): Promise<ReturnType<typeof text>> {
+export function runForeground(command: string, ctx: Pick<ToolContext, "cwd" | "signal" | "onUpdate">, timeoutMs: number, sandbox?: SandboxPolicy): Promise<ReturnType<typeof text>> {
   return new Promise((resolve) => {
-    const proc = start(command, ctx.cwd);
+    const proc = start(command, ctx.cwd, sandbox);
     let out = "";
     let timedOut = false;
     let lastUpdate = 0;
@@ -90,7 +101,8 @@ export function runForeground(command: string, ctx: Pick<ToolContext, "cwd" | "s
       if (timedOut) suffix = `\n[Timed out after ${timeoutMs / 1000}s and was killed. Use a larger timeout or background:true.]`;
       else if (ctx.signal.aborted) suffix = "\n[Aborted by user]";
       else if (code !== 0) suffix = `\n[exit code ${code ?? sig}]`;
-      resolve(text((t.text || "(no output)") + suffix, timedOut || ctx.signal.aborted || code !== 0, { exitCode: code, timedOut, fullOutputPath: t.fullPath }));
+      if (code !== 0 && proc.sandboxed && looksSandboxBlocked(out)) suffix += `\n[This ran in rcode's sandbox (${sandbox?.network ? "" : "no network, "}writes limited to the project and temp/cache dirs). If it legitimately needs that access, re-run with unsandboxed:true — the user will be asked to approve.]`;
+      resolve(text((t.text || "(no output)") + suffix, timedOut || ctx.signal.aborted || code !== 0, { exitCode: code, timedOut, fullOutputPath: t.fullPath, sandboxed: !!proc.sandboxed }));
     });
   });
 }

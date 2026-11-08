@@ -25,6 +25,8 @@ import { killAllJobs } from "../tools/bash.ts";
 import { maskStale } from "../context/prune.ts";
 import { VerifyGate } from "./verify-gate.ts";
 import { Checkpoints } from "./checkpoints.ts";
+import { sandboxBackend } from "../tools/sandbox.ts";
+import { Guards } from "./guards.ts";
 import { RuvnetIntegration } from "../integrations/ruvnet.ts";
 
 export interface SessionOptions {
@@ -71,6 +73,7 @@ export class AgentSession {
   private turn = 0;
   readonly verifyGate = new VerifyGate();
   checkpoints?: Checkpoints;
+  guards = new Guards();
 
   constructor(readonly opts: SessionOptions) {}
 
@@ -89,6 +92,7 @@ export class AgentSession {
     this.model = model;
 
     this.envBlock = environmentBlock(o.cwd);
+    this.guards = new Guards(this.config.guards ?? []);
     this.policy = new PermissionPolicy(o.mode ?? this.config.permissionMode ?? "ask", { allow: this.config.permissions?.allow ?? [], deny: this.config.permissions?.deny ?? [] }, o.asker);
     this.hooks = new ShellHooks(this.config.hooks ?? [], o.cwd);
     setClaudeHomeImport(!!this.config.compat?.claudeHome);
@@ -134,6 +138,7 @@ export class AgentSession {
       maxTurns: o.maxTurns ?? this.config.maxTurns,
       hooks: this.agentHooks(),
     });
+    this.applySandbox();
     this.refreshTools();
     const ctx = this.session.buildContext();
     this.agent.messages = ctx.messages;
@@ -201,6 +206,8 @@ export class AgentSession {
           const r = await this.hooks.run("PreToolUse", { session_id: this.session.id, tool_name: c.tool.name, tool_input: c.args }, c.tool.name);
           if (r.block) return { action: "deny", reason: `Hook: ${r.block}` };
         }
+        const guard = this.guards.check(c.tool.name, c.args);
+        if (guard) return guard;
         return this.policy.decide(c);
       },
       afterToolCall: async (c) => {
@@ -257,6 +264,7 @@ export class AgentSession {
     this.agent.state.set("turn", ++this.turn);
     this.checkpoints?.snapshot(this.turn);
     this.verifyGate.reset();
+    this.guards.resetTurn();
     const startIdx = this.agent.messages.length;
     await this.agent.prompt(parts);
     if (this.toolsDirty) this.refreshTools();
@@ -286,7 +294,17 @@ export class AgentSession {
     return m;
   }
   setThinking(t: ThinkingLevel) { this.thinking = t; this.agent.config.thinking = t; this.session.setMeta({ thinking: t }); }
-  setMode(mode: PermissionMode) { this.policy.mode = mode; this.refreshTools(); }
+  setMode(mode: PermissionMode) { this.policy.mode = mode; this.applySandbox(); this.refreshTools(); }
+
+  /** Sandbox bash in ask/auto-edit (and plan) by default; full mode runs unsandboxed unless sandbox:"always". */
+  private applySandbox() {
+    const cfg = this.config.sandbox ?? "auto";
+    const backend = sandboxBackend();
+    const on = !!backend && cfg !== "off" && (cfg === "always" || this.policy.mode !== "full");
+    this.agent.state.set("sandbox", { enabled: on, network: this.config.sandboxNetwork ?? false });
+    this.policy.sandboxed = on;
+  }
+  get sandboxStatus() { const p = this.agent.state.get("sandbox") as any; return p?.enabled ? `${sandboxBackend()}${p.network ? "" : ", no network"}` : "off"; }
   setGoal(goal?: string) { this.goal = goal; }
 
   /** Revert file changes made by edit/write during the most recent turn that changed files. */

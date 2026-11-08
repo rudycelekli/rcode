@@ -75,6 +75,8 @@ function primaryArg(tool: Tool, args: Record<string, unknown>): string | undefin
 
 export class PermissionPolicy {
   private sessionAllows = new Set<string>();
+  /** True when bash runs inside an OS sandbox: contained commands no longer need approval in ask mode. */
+  sandboxed = false;
   constructor(public mode: PermissionMode, public rules: PermissionRules = { allow: [], deny: [] }, public asker?: Asker) {}
 
   async decide({ tool, args }: BeforeToolCall): Promise<PermissionDecision> {
@@ -104,9 +106,10 @@ export class PermissionPolicy {
     let needAsk = false, reason = "";
     if (tool.name === "bash") {
       const risk = classifyCommand(String(args.command ?? ""));
-      if (risk.level === "safe") return { action: "allow" };
-      if (risk.level === "risky") { needAsk = true; reason = risk.reason!; }
-      else if (this.mode === "ask") { needAsk = true; reason = "runs a command"; }
+      if (args.unsandboxed && this.sandboxed) { needAsk = true; reason = risk.level === "risky" ? `${risk.reason}, outside the sandbox` : "runs outside the sandbox (network / writes outside the project)"; }
+      else if (risk.level === "safe") return { action: "allow" };
+      else if (risk.level === "risky") { needAsk = true; reason = risk.reason!; }
+      else if (this.mode === "ask" && !this.sandboxed) { needAsk = true; reason = "runs a command"; }
     } else if (e.sensitive) {
       needAsk = true; reason = e.network ? "opens an external site" : "reads private screen/clipboard data";
     } else if (e.writesFiles) {
@@ -120,7 +123,7 @@ export class PermissionPolicy {
 
     let customKey: string | undefined;
     try { customKey = tool.permissionKey?.(args as any); } catch {}
-    const key = customKey ?? (tool.name === "bash" ? `bash:${String(args.command).split(/\s+/).slice(0, 2).join(" ")}` : tool.name);
+    const key = customKey ?? (tool.name === "bash" && args.unsandboxed ? `bash-unsandboxed:${String(args.command).split(/\s+/).slice(0, 2).join(" ")}` : tool.name === "bash" ? `bash:${String(args.command).split(/\s+/).slice(0, 2).join(" ")}` : tool.name);
     if (this.sessionAllows.has(key)) return { action: "allow" };
     if (!this.asker) return { action: "deny", reason: `Needs approval (${reason}) but no interactive user. Re-run with --yes or add an allow rule.` };
     const ans = await this.asker({ tool, args, summary, reason });
