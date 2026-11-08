@@ -6,7 +6,7 @@ import { rmSync, writeFileSync } from "node:fs";
  */
 import { Agent } from "../agent/loop.ts";
 import type { AgentEvent, AgentHooks, Tool } from "../agent/types.ts";
-import { apiKeyFor, defaultModelRef, resolveModel } from "../ai/models.ts";
+import { apiKeyFor, defaultModelRef, resolveModel, resolveTier } from "../ai/models.ts";
 import type { Message, Model, ThinkingLevel, UserContent } from "../ai/types.ts";
 import { loadAuth, loadConfig, type RcodeConfig } from "../config.ts";
 import { buildSystemPrompt, environmentBlock } from "../context/system-prompt.ts";
@@ -162,8 +162,8 @@ export class AgentSession {
       agents: () => this.agentDefs,
       maxDepth: 2,
       maxParallel: 6,
-      build: (def, depth) => {
-        const model = (def?.model && def.model !== "inherit" && resolveModel(def.model)) || this.model;
+      build: (def, depth, tier) => {
+        const model = resolveTier(tier ?? def?.model, this.model, this.config.smallModel);
         let tools = filterTools([...coreTools(this.config.tools), ...memTools, ...this.mcpTools()], def?.tools);
         if (depth < 2) tools = [...tools, task];
         const base = buildSystemPrompt({ cwd: this.cwd, tools, env: this.envBlock, subagent: true, mode: this.policy.mode === "plan" ? "plan" : "default" });
@@ -270,7 +270,7 @@ export class AgentSession {
     if (this.toolsDirty) this.refreshTools();
     if (this.memory && this.config.memory?.autoCapture !== false && !this.opts.minimal) {
       const turn = this.agent.messages.slice(startIdx);
-      const small = (this.config.smallModel && resolveModel(this.config.smallModel)) || this.model;
+      const small = resolveTier("fast", this.model, this.config.smallModel);
       void captureLessons({ model: small, apiKey: apiKeyFor(small, this.auth), memory: this.memory, project: this.cwd, turn })
         .then((n) => { if (n) this.emit({ type: "notice", level: "info", text: `🧠 learned ${n} thing${n > 1 ? "s" : ""} for next time (/memory to review)` }); })
         .catch(() => {});

@@ -138,3 +138,18 @@ export async function refreshFromModelsDev(): Promise<number> {
   }
   return n;
 }
+
+/** Cheap sibling model on the same provider (cost router for subagents, summaries, memory capture). */
+export const FAST_MODEL: Record<string, string> = {
+  anthropic: "anthropic/claude-haiku-5-5",
+  openai: "openai/gpt-5-mini",
+  google: "google/gemini-2.5-flash",
+  openrouter: "openrouter/anthropic/claude-haiku-5-5",
+  deepseek: "deepseek/deepseek-chat",
+};
+
+export function resolveTier(tier: string | undefined, main: Model, smallModel?: string): Model {
+  if (!tier || tier === "inherit" || tier === "smart") return main;
+  if (tier === "fast") return (smallModel && resolveModel(smallModel)) || (FAST_MODEL[main.provider] && resolveModel(FAST_MODEL[main.provider]!)) || main;
+  return resolveModel(tier) ?? main;
+}

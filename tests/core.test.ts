@@ -260,3 +260,15 @@ describe("memory capture", () => {
     expect((await m.list())[0]!.text).toContain("pnpm");
   });
 });
+
+describe("model tiers", () => {
+  test("fast resolves to the provider's cheap sibling or smallModel; smart/inherit keep main", () => {
+    const { resolveTier } = require("../src/ai/models.ts");
+    const opus = resolveModel("anthropic/claude-opus-5-5")!;
+    expect(resolveTier("fast", opus).id).toBe("claude-haiku-5-5");
+    expect(resolveTier("smart", opus).id).toBe("claude-opus-5-5");
+    expect(resolveTier("inherit", opus).id).toBe("claude-opus-5-5");
+    expect(resolveTier("fast", opus, "openai/gpt-5-nano").id).toBe("gpt-5-nano");
+    expect(resolveTier("fast", resolveModel("ollama/qwen3")!).id).toBe("qwen3");
+  });
+});

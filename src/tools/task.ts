@@ -13,7 +13,7 @@ import { text } from "./util.ts";
 export interface SubagentFactory {
   agents: () => AgentDef[];
   /** Build a child agent's model/tools/prompt. */
-  build: (def: AgentDef | undefined, depth: number) => { model: Model; apiKey?: string; tools: Tool[]; systemPrompt: string; hooks?: AgentHooks };
+  build: (def: AgentDef | undefined, depth: number, tier?: string) => { model: Model; apiKey?: string; tools: Tool[]; systemPrompt: string; hooks?: AgentHooks };
   maxDepth: number;
   maxParallel: number;
 }
@@ -25,6 +25,7 @@ export function createTaskTool(factory: SubagentFactory): Tool {
       description: z.string().describe("3-6 word label"),
       prompt: z.string().describe("Complete, self-contained instructions. The subagent sees nothing else from this conversation."),
       agent: z.string().optional().describe("Agent type (default: general)"),
+      tier: z.enum(["fast", "smart"]).optional().describe("fast = cheaper/faster model for simple, well-specified work (search, summarizing, boilerplate); smart = the main model (default for general)"),
     })).min(1).max(12),
   });
   const list = () => factory.agents().map((a) => `- ${a.name}: ${a.description}`).join("\n");
@@ -50,7 +51,7 @@ export function createTaskTool(factory: SubagentFactory): Tool {
           const t = queue.shift()!;
           const def = t.agent && t.agent !== "general" ? defs.find((d) => d.name === t.agent) : undefined;
           if (t.agent && t.agent !== "general" && !def) { results[t.i] = `### ${t.description}\nUnknown agent type "${t.agent}".`; continue; }
-          const b = factory.build(def, depth);
+          const b = factory.build(def, depth, t.tier);
           const child = new Agent({ model: b.model, apiKey: b.apiKey, systemPrompt: b.systemPrompt, tools: b.tools, cwd: ctx.cwd, sessionId: `${ctx.agent.sessionId}:sub${t.i}`, depth, hooks: b.hooks, maxTurns: 100 });
           const off = ctx.signal.addEventListener("abort", () => child.abort(), { once: true });
           let steps = 0;
