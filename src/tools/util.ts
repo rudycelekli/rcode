@@ -2,31 +2,26 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import type { ToolContext, ToolResult } from "../agent/types.ts";
+import { shapeOutput } from "../context/shape.ts";
+import { artifactPath } from "../context/artifacts.ts";
 
 export const MAX_LINES = 2000;
 export const MAX_BYTES = 50 * 1024;
 export const MAX_LINE_CHARS = 2000;
 
 export function resolvePath(cwd: string, p: string): string {
+  const art = artifactPath(p);
+  if (art) return art;
   if (p.startsWith("~/")) p = join(homedir(), p.slice(2));
   return isAbsolute(p) ? p : resolve(cwd, p);
 }
 
 export const text = (t: string, isError = false, details?: unknown): ToolResult => ({ content: [{ type: "text", text: t }], isError, details });
 
-/** Keep the tail (for command output); spill full output to a file and say where. */
+/** Shape oversized output (errors + head + tail kept); the full text goes to the artifact store. */
 export function truncateTail(output: string, label = "output"): { text: string; truncated: boolean; fullPath?: string } {
-  const bytes = Buffer.byteLength(output);
-  const lines = output.split("\n");
-  if (lines.length <= MAX_LINES && bytes <= MAX_BYTES) return { text: output, truncated: false };
-  const dir = join(tmpdir(), "rcode-output");
-  mkdirSync(dir, { recursive: true });
-  const fullPath = join(dir, `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.log`);
-  writeFileSync(fullPath, output);
-  let kept = lines.slice(-MAX_LINES);
-  let t = kept.join("\n");
-  while (Buffer.byteLength(t) > MAX_BYTES && kept.length > 1) { kept = kept.slice(Math.ceil(kept.length / 10)); t = kept.join("\n"); }
-  return { text: `[… ${lines.length - kept.length} earlier lines omitted; full ${label} saved to ${fullPath} — read it with offsets if needed]\n${t}`, truncated: true, fullPath };
+  const r = shapeOutput(output, label, "tail");
+  return { text: r.text, truncated: r.truncated, fullPath: r.artifact };
 }
 
 // ── Per-file mutation lock (shared across all agents in this process, incl. subagents) ──

@@ -5,7 +5,7 @@ import type { Tool } from "../agent/types.ts";
 import { IMAGE_EXT, isBinary, markRead, MAX_BYTES, MAX_LINE_CHARS, MAX_LINES, resolvePath, text } from "./util.ts";
 
 const schema = z.object({
-  path: z.string().describe("File path (absolute or relative to cwd). Supports a line selector suffix like 'src/a.ts:120-180' or 'src/a.ts:-50' (last 50 lines)."),
+  path: z.string().describe("File path (absolute or relative to cwd), or an artifact://… reference from a shaped tool output. Supports a line selector suffix like 'src/a.ts:120-180' or 'src/a.ts:-50' (last 50 lines)."),
   offset: z.number().int().min(1).optional().describe("1-based line to start from"),
   limit: z.number().int().min(1).optional().describe("Max lines to return (default 2000)"),
 });
@@ -21,7 +21,7 @@ export const readTool: Tool<typeof schema> = {
   summarize: (a) => a.path + (a.offset ? `:${a.offset}` : ""),
   async execute(args, ctx) {
     let p = args.path, offset = args.offset, limit = args.limit, tail: number | undefined;
-    const sel = p.match(/^(.*?):(-?\d+)(?:-(\d+))?$/);
+    const sel = p.startsWith("artifact://") ? null : p.match(/^(.*?):(-?\d+)(?:-(\d+))?$/);
     if (sel && !safeExists(resolvePath(ctx.cwd, p))) {
       p = sel[1]!;
       const a = Number(sel[2]);

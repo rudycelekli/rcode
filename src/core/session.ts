@@ -20,6 +20,7 @@ import { Session } from "../session/store.ts";
 import { coreTools, filterTools } from "../tools/index.ts";
 import { createTaskTool } from "../tools/task.ts";
 import { killAllJobs } from "../tools/bash.ts";
+import { maskStale } from "../context/prune.ts";
 import { RuvnetIntegration } from "../integrations/ruvnet.ts";
 
 export interface SessionOptions {
@@ -171,6 +172,7 @@ export class AgentSession {
 
   private agentHooks(): AgentHooks {
     return {
+      transformContext: (messages) => maskStale(messages),
       onMessage: (m) => { this.msgIds.push(this.session.appendMessage(m)); },
       beforeToolCall: async (c) => {
         if (this.hooks.has("PreToolUse")) {

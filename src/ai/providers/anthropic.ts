@@ -57,8 +57,11 @@ function convertMessages(messages: Message[], model: Model): Anthropic.MessagePa
       else out.push({ role: "user", content: [block] });
     }
   }
-  for (let i = out.length - 1; i >= 0; i--) {
-    if (out[i].role === "user") { const b = out[i].content; if (b.length) b[b.length - 1].cache_control = { type: "ephemeral" }; break; }
+  // Two rolling message breakpoints (+ system + tools = 4, the API max): the last and second-to-last
+  // user turns, so a large parallel tool batch can't push the previous breakpoint out of the lookback window.
+  let marked = 0;
+  for (let i = out.length - 1; i >= 0 && marked < 2; i--) {
+    if (out[i].role === "user") { const b = out[i].content; if (b.length) { b[b.length - 1].cache_control = { type: "ephemeral" }; marked++; } }
   }
   return out;
 }

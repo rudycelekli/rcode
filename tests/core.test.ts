@@ -210,3 +210,38 @@ describe("AgentSession (faux)", () => {
     delete process.env.RCODE_HOME;
   });
 });
+
+describe("context efficiency", () => {
+  test("shaping keeps head, tail and error regions; full output retrievable via artifact", async () => {
+    process.env.RCODE_HOME = tmp();
+    const { shapeOutput } = await import("../src/context/shape.ts");
+    const { readArtifact } = await import("../src/context/artifacts.ts");
+    const lines = Array.from({ length: 5000 }, (_, i) => (i === 2500 ? "src/a.ts:10:5 error TS2322: bad type" : `ok line ${i}`));
+    const r = shapeOutput(lines.join("\n"), "test");
+    expect(r.truncated).toBe(true);
+    expect(r.text).toContain("ok line 0");
+    expect(r.text).toContain("ok line 4999");
+    expect(r.text).toContain("error TS2322");
+    expect(readArtifact(r.artifact!)).toContain("ok line 2600");
+    delete process.env.RCODE_HOME;
+  });
+  test("cleanup collapses progress bars and repeated lines", async () => {
+    const { cleanup } = await import("../src/context/shape.ts");
+    expect(cleanup("10%\r50%\r100%\nsame\nsame\nsame\nsame")).toBe("100%\nsame\n[… previous line repeated 3 more times]");
+  });
+  test("stale reads are masked only when savings are large", async () => {
+    const { maskStale } = await import("../src/context/prune.ts");
+    const big = "x".repeat(30_000);
+    const msgs: any[] = [
+      { role: "assistant", content: [{ type: "toolCall", id: "1", name: "read", arguments: { path: "a.ts" } }] },
+      { role: "toolResult", toolCallId: "1", toolName: "read", content: [{ type: "text", text: big }], isError: false },
+      { role: "assistant", content: [{ type: "toolCall", id: "2", name: "edit", arguments: { path: "a.ts", edits: [] } }] },
+      { role: "toolResult", toolCallId: "2", toolName: "edit", content: [{ type: "text", text: "ok" }], isError: false },
+      ...Array.from({ length: 14 }, () => ({ role: "user", content: [{ type: "text", text: "next" }] })),
+    ];
+    const out = maskStale(msgs);
+    expect((out[1].content[0] as any).text).toContain("stale read of a.ts");
+    const recentOnly = msgs.slice(0, 4);
+    expect(maskStale(recentOnly)).toBe(recentOnly); // within the protected recent window → untouched
+  });
+});
