@@ -5,6 +5,7 @@ import { streamOpenAIChat } from "./providers/openai-chat.ts";
 import { streamOpenAIResponses } from "./providers/openai-responses.ts";
 import { streamGoogle } from "./providers/google.ts";
 import { streamOllama } from "./providers/ollama.ts";
+import { streamFaux } from "./providers/faux.ts";
 
 export * from "./types.ts";
 export * from "./models.ts";
@@ -19,6 +20,7 @@ export function stream(model: Model, ctx: Context, opts: StreamOptions = {}): As
     case "openai-responses": return streamOpenAIResponses(model, ctx, opts);
     case "google-gemini": return streamGoogle(model, ctx, opts);
     case "ollama": return streamOllama(model, ctx, opts);
+    case "faux": return streamFaux(model, ctx, opts);
   }
 }
 

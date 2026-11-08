@@ -79,7 +79,8 @@ export class PermissionPolicy {
 
   async decide({ tool, args }: BeforeToolCall): Promise<PermissionDecision> {
     const primary = primaryArg(tool, args);
-    const summary = tool.summarize?.(args as any) ?? JSON.stringify(args).slice(0, 200);
+    let summary = JSON.stringify(args).slice(0, 200);
+    try { summary = tool.summarize?.(args as any) ?? summary; } catch {}
 
     if (tool.name === "bash") {
       const risk = classifyCommand(String(args.command ?? ""));

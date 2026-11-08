@@ -18,6 +18,7 @@ import { renderMarkdown } from "./markdown.ts";
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MODES: PermissionMode[] = ["ask", "auto-edit", "full", "plan"];
+const NOARG = new Set(["help", "plan", "new", "fork", "rewind", "cost", "context", "mcp", "tools", "skills", "agents", "commands", "export", "copy", "clear", "quit", "resume", "model", "thinking", "mode", "memory"]);
 const THINK: ThinkingLevel[] = ["off", "low", "medium", "high", "xhigh", "max"];
 
 interface RunningTool { id: string; name: string; summary: string; started: number; tail?: string }
@@ -360,7 +361,14 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
       render(); return;
     }
     if (ed.completions.length) {
-      if (k === "\t" || k === "\r") { ed.applyCompletion(ed.completions[ed.compIdx]!); if (k === "\r" && ed.text.startsWith("/") && !ed.text.trim().includes(" ")) { /* keep for args */ } render(); return; }
+      if (k === "\t" || k === "\r") {
+        const c = ed.completions[ed.compIdx]!;
+        const exact = ed.currentToken().token === c.label;
+        ed.applyCompletion(c);
+        // Enter runs the command when it was fully typed (or is a no-arg builtin); otherwise it just completes.
+        if (k === "\r" && c.label.startsWith("/") && (exact || NOARG.has(c.label.slice(1)))) submit();
+        render(); return;
+      }
       if (k === "\x1b[A") { ed.compIdx = (ed.compIdx - 1 + Math.min(8, ed.completions.length)) % Math.min(8, ed.completions.length); render(); return; }
       if (k === "\x1b[B") { ed.compIdx = (ed.compIdx + 1) % Math.min(8, ed.completions.length); render(); return; }
       if (k === "\x1b") { ed.completions = []; render(); return; }

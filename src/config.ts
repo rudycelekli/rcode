@@ -35,6 +35,8 @@ export interface RcodeConfig {
   ruvnet?: { ruflo?: boolean; brain?: boolean };
   maxTurns?: number;
   theme?: string;
+  /** Compatibility imports. claudeHome: also load ~/.claude/agents and ~/.claude/skills. */
+  compat?: { claudeHome?: boolean };
   /** Extra skill/command/agent directories. */
   paths?: { skills?: string[]; commands?: string[]; agents?: string[] };
 }

@@ -20,6 +20,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   together: { api: "openai-chat", baseUrl: "https://api.together.xyz/v1", envKeys: ["TOGETHER_API_KEY"] },
   fireworks: { api: "openai-chat", baseUrl: "https://api.fireworks.ai/inference/v1", envKeys: ["FIREWORKS_API_KEY"] },
   ollama: { api: "ollama", baseUrl: process.env.OLLAMA_HOST ? `${process.env.OLLAMA_HOST.replace(/\/$/, "")}/v1` : "http://localhost:11434/v1", envKeys: [] },
+  faux: { api: "faux", baseUrl: "", envKeys: [] },
   lmstudio: { api: "openai-chat", baseUrl: "http://localhost:1234/v1", envKeys: [] },
 };
 

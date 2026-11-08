@@ -9,7 +9,7 @@ import { apiKeyFor, defaultModelRef, resolveModel } from "../ai/models.ts";
 import type { Message, Model, ThinkingLevel, UserContent } from "../ai/types.ts";
 import { loadAuth, loadConfig, type RcodeConfig } from "../config.ts";
 import { buildSystemPrompt } from "../context/system-prompt.ts";
-import { expandCommand, loadAgents, loadCommands, loadSkills, type AgentDef, type Command, type Skill } from "../ext/resources.ts";
+import { expandCommand, setClaudeHomeImport, loadAgents, loadCommands, loadSkills, type AgentDef, type Command, type Skill } from "../ext/resources.ts";
 import { ShellHooks } from "../hooks/shell-hooks.ts";
 import { McpManager } from "../mcp/manager.ts";
 import { createMemoryTools, getMemory, memoryContext, type MemoryProvider } from "../memory/index.ts";
@@ -78,6 +78,7 @@ export class AgentSession {
 
     this.policy = new PermissionPolicy(o.mode ?? this.config.permissionMode ?? "ask", { allow: this.config.permissions?.allow ?? [], deny: this.config.permissions?.deny ?? [] }, o.asker);
     this.hooks = new ShellHooks(this.config.hooks ?? [], o.cwd);
+    setClaudeHomeImport(!!this.config.compat?.claudeHome);
     this.skills = loadSkills(o.cwd, this.config.paths?.skills);
     this.commands = loadCommands(o.cwd, this.config.paths?.commands);
     this.agentDefs = loadAgents(o.cwd, this.config.paths?.agents);

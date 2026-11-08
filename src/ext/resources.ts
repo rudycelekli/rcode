@@ -35,10 +35,15 @@ export function parseFrontmatter(src: string): { meta: Frontmatter; body: string
 }
 const unq = (s: string) => s.replace(/^["']|["']$/g, "");
 
+let claudeHomeOptIn = false;
+export function setClaudeHomeImport(v: boolean) { claudeHomeOptIn = v; }
+
 export const BUILTIN_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "builtin");
 
 function roots(cwd: string, kind: "skills" | "commands" | "agents", extra: string[] = []): string[] {
-  const r = [join(BUILTIN_DIR, kind), join(RCODE_HOME, kind), join(homedir(), ".claude", kind)];
+  // ~/.claude commands are cheap (not in the prompt); agents/skills from ~/.claude are opt-in to avoid prompt bloat.
+  const claudeHome = kind === "commands" || process.env.RCODE_IMPORT_CLAUDE_HOME === "1" || claudeHomeOptIn;
+  const r = [join(BUILTIN_DIR, kind), join(RCODE_HOME, kind), ...(claudeHome ? [join(homedir(), ".claude", kind)] : [])];
   if (isTrusted(cwd) || process.env.RCODE_TRUST_PROJECT === "1") r.push(join(cwd, ".claude", kind), join(cwd, ".rcode", kind));
   return [...r, ...extra].filter((d) => existsSync(d));
 }
