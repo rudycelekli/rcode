@@ -17,6 +17,8 @@ rcode was built after studying the best open agents in depth — [pi](https://gi
 
 | | rcode |
 |---|---|
+| **Starts with zero setup** | No config needed: rcode uses your keys if you have them, otherwise the best coding model already installed in Ollama or LM Studio. With nothing at all, it explains your two options in plain words. Paste any API key straight into the chat: rcode recognizes the provider, saves the key on your computer, and never sends it to a model. A new session suggests three first prompts that fit the folder; type 1, 2 or 3. |
+| **Grows by talking** | `/hire a reviewer who checks accessibility` designs a persistent teammate the agent can delegate to. `/teach release` turns what you just did into a reusable `/release` workflow. Both are plain markdown you can edit. |
 | **Any model** | Anthropic (Claude Opus/Sonnet/Haiku 5.5, Fable), OpenAI (GPT-5, Responses API), Google Gemini, OpenRouter, Groq, xAI, DeepSeek, Mistral, Cerebras, Together, Fireworks, **Ollama (native, full context)**, LM Studio. `rcode models --refresh` pulls live pricing from models.dev. |
 | **Agent loop** | Errors-are-data streaming (never crashes mid-turn) · parallel read-only tools, serialized writes · steering (type while it works) & follow-up queues · loop guard · automatic context compaction with structured summaries · overflow recovery. |
 | **Editing that works** | Multi-edit atomic replacements with exact → normalized → indentation-tolerant matching, BOM/CRLF preserved, **stale-file protection** (refuses to edit files changed since last read), unified diffs. |

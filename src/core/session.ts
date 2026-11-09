@@ -8,7 +8,9 @@ import { Agent } from "../agent/loop.ts";
 import type { AgentEvent, AgentHooks, BeforeToolCall, PermissionDecision, Tool } from "../agent/types.ts";
 import { apiKeyFor, defaultModelRef, resolveModel, resolveTier } from "../ai/models.ts";
 import type { Message, Model, ThinkingLevel, UserContent } from "../ai/types.ts";
-import { loadAuth, loadConfig, type RcodeConfig } from "../config.ts";
+import { loadAuth, loadConfig, saveAuth, type RcodeConfig } from "../config.ts";
+import { hasCloudKey, localStartModel } from "./welcome.ts";
+import { hireTeammate, teachWorkflow } from "./teach.ts";
 import "../config-surface.ts";
 import { buildSystemPrompt, environmentBlock } from "../context/system-prompt.ts";
 import { expandCommand, setClaudeHomeImport, loadAgents, loadCommands, loadSkills, type AgentDef, type Command, type Skill } from "../ext/resources.ts";
@@ -86,6 +88,8 @@ export class AgentSession {
   lastReceipt?: TurnReceipt;
   private telemetry?: Telemetry;
   private promptId = "";
+  /** True when no key and no local model server were found: the frontend should welcome, not error. */
+  needsModel = false;
 
   constructor(readonly opts: SessionOptions) {}
 
@@ -98,7 +102,12 @@ export class AgentSession {
     this.auth = loadAuth();
     this.thinking = o.thinking ?? this.config.thinking ?? "medium";
     this.compaction = { ...DEFAULT_COMPACTION, ...this.config.compaction };
-    const ref = o.model ?? this.config.model ?? defaultModelRef(this.auth);
+    let ref = o.model ?? this.config.model;
+    if (!ref && !hasCloudKey(this.auth)) {
+      ref = await localStartModel();
+      this.needsModel = !ref;
+    }
+    ref ??= defaultModelRef(this.auth);
     const model = resolveModel(ref);
     if (!model) throw new Error(`Unknown model "${ref}". Try provider/model, e.g. anthropic/claude-opus-5-5, openai/gpt-5, ollama/qwen3-coder.`);
     this.model = model;
@@ -347,6 +356,34 @@ export class AgentSession {
     this.session.setMeta({ model: `${m.provider}/${m.id}` });
     return m;
   }
+  /** A pasted API key: store it locally and switch to that provider if the current model can't run. */
+  useKey(provider: string, key: string): Model {
+    saveAuth(provider, key);
+    this.auth = loadAuth();
+    const stuck = this.needsModel || (this.model.envKeys.length > 0 && !apiKeyFor(this.model, this.auth));
+    this.needsModel = false;
+    if (stuck) return this.setModel(defaultModelRef(this.auth));
+    this.agent.config.apiKey = apiKeyFor(this.model, this.auth);
+    return this.model;
+  }
+
+  private fast() { const m = resolveTier("fast", this.model, this.config.smallModel); return { model: m, apiKey: apiKeyFor(m, this.auth) }; }
+
+  /** Design a persistent teammate from one sentence; it's immediately available to the task tool. */
+  async hire(ask: string, dir?: string) {
+    const r = await hireTeammate({ ...this.fast(), ask, dir });
+    this.agentDefs = loadAgents(this.cwd, [...(this.config.paths?.agents ?? []), ...(dir ? [dir] : [])]);
+    this.refreshTools();
+    return r;
+  }
+
+  /** Distill this session's work into a reusable /<name> workflow. */
+  async teach(name: string, dir?: string) {
+    const r = await teachWorkflow({ ...this.fast(), name, messages: this.messages, dir });
+    this.commands = loadCommands(this.cwd, [...(this.config.paths?.commands ?? []), ...(dir ? [dir] : [])]);
+    return r;
+  }
+
   setThinking(t: ThinkingLevel) { this.thinking = t; this.agent.config.thinking = t; this.session.setMeta({ thinking: t }); }
   setMode(mode: PermissionMode) { this.policy.mode = mode; this.applySandbox(); this.refreshTools(); }
 

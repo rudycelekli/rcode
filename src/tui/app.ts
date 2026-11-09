@@ -16,6 +16,7 @@ import { listSessions } from "../session/store.ts";
 import { a, strip, truncate, width, wrap } from "./ansi.ts";
 import { Editor, type Completion } from "./editor.ts";
 import { renderMarkdown } from "./markdown.ts";
+import { keyProvider, starterIdeas, WELCOME } from "../core/welcome.ts";
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MODES: PermissionMode[] = ["ask", "auto-edit", "full", "plan"];
@@ -30,6 +31,7 @@ const BUILTINS: Array<[string, string]> = [
   ["mode", "Approval mode: ask|auto-edit|full|plan"], ["plan", "Toggle plan mode (read-only)"], ["guard", "Toggle guards: freeze-tests | no-skip | strict-tdd"], ["goal", "Set a goal the agent must reach before stopping"],
   ["compact", "Summarize older context: /compact [focus]"], ["new", "Start a fresh session"], ["resume", "Resume a recent session"], ["fork", "Fork this session into a new branch file"],
   ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["receipt", "Hash-chained proof of the last turn"], ["context", "Where the context window goes (by section, tool, message type)"], ["mcp", "MCP server status"],
+  ["hire", "Add a teammate from one sentence: /hire a reviewer who checks accessibility"], ["teach", "Turn what we just did into a reusable workflow: /teach <name>"],
   ["memory", "Search memory: /memory <query>"], ["remember", "Save a memory: /remember <text>"], ["forget", "Delete a memory: /forget <id>"], ["promote", "Promote memories to AGENTS.md: /promote <id…>"], ["tools", "List available tools"], ["skills", "List skills"],
   ["agents", "List subagent types"], ["commands", "List slash commands"], ["export", "Export transcript to markdown"], ["copy", "Copy last answer to clipboard"], ["clear", "Clear screen"], ["quit", "Exit"],
 ];
@@ -56,6 +58,7 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
     ...opts,
     asker: (req) => new Promise((resolve) => { perm = { title: `${req.tool.label ?? req.tool.name}: ${req.summary}`, reason: req.reason, resolve }; render(); }),
   }).init();
+  const ideas = starterIdeas(session.cwd);
 
   const cols = () => Math.max(20, out.columns || 80);
   const rows = () => Math.max(10, out.rows || 24);
@@ -325,6 +328,24 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
         say(a.gray(r.added ? `added ${r.added} convention(s) to ${r.file.replace(session.cwd + "/", "")} — commit it to share with your team` : "already present"));
         return true;
       }
+      case "hire": {
+        if (!arg) { say(a.gray("usage: /hire <describe the job in one sentence>")); return true; }
+        say(a.gray("designing your teammate…"));
+        try {
+          const r = await session.hire(arg);
+          say(`${a.green("✓")} hired ${a.accent(r.name)} ${a.gray("— " + r.spec.description)}\n${a.gray(`  ask for them by name ("have ${r.name} look at…") · edit ${r.file}`)}`);
+        } catch (e) { say(a.red((e as Error).message)); }
+        return true;
+      }
+      case "teach": {
+        if (!arg) { say(a.gray("usage: /teach <name>  — after doing a task once, saves it as /<name>")); return true; }
+        say(a.gray("distilling what worked…"));
+        try {
+          const r = await session.teach(arg);
+          say(`${a.green("✓")} learned ${a.accent("/" + r.name)} ${a.gray("— " + r.spec.description)}\n${a.gray(`  run it any time · edit ${r.file}`)}`);
+        } catch (e) { say(a.red((e as Error).message)); }
+        return true;
+      }
       case "forget": if (arg && session.memory) say(a.gray((await session.memory.remove(arg)) ? `forgot ${arg}` : `no memory ${arg}`)); return true;
       case "remember": if (arg && session.memory) { await session.memory.add({ text: arg, scope: "project", project: session.cwd, kind: "fact", source: "user" }); say(a.gray("remembered")); } return true;
       case "tools": say(session.agent.config.tools.map((t) => `  ${a.accent(t.name)} ${a.gray(t.description.split("\n")[0]!.slice(0, 90))}`).join("\n")); return true;
@@ -350,8 +371,10 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
   }
 
   async function send(textIn: string) {
-    const trimmed = textIn.trim();
+    let trimmed = textIn.trim();
     if (!trimmed) return;
+    if (!session.messages.length && /^[1-3]$/.test(trimmed) && ideas[Number(trimmed) - 1]) trimmed = ideas[Number(trimmed) - 1]!;
+    if (session.needsModel && !trimmed.startsWith("/")) { say(a.yellow(WELCOME.join("\n"))); return; }
     const m = trimmed.match(/^\/(\w[\w:-]*)\s*([\s\S]*)$/);
     if (m && (await builtin(m[1]!, m[2]!.trim()))) return;
     if (m && !session.commands.some((c) => c.name === m[1])) { say(a.red(`unknown command /${m[1]} — /help`)); return; }
@@ -375,6 +398,13 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
   function submit(asFollowUp = false) {
     const t = ed.expanded();
     if (!t.trim()) return;
+    const pasted = keyProvider(t);
+    if (pasted) {
+      ed.clear();
+      const m = session.useKey(pasted.provider, pasted.key);
+      say(`${a.green("✓")} saved your ${pasted.provider} key (${pasted.key.slice(0, 7)}…${pasted.key.slice(-4)}) on this computer only.\n${a.gray(`  using ${m.provider}/${m.id} · ask anything`)}`);
+      return;
+    }
     ed.pushHistory(ed.text);
     ed.clear();
     if (session.isRunning) {
@@ -477,11 +507,14 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
   process.on("SIGTERM", () => void shutdown());
 
   const ctxFiles = (await import("../context/system-prompt.ts")).loadContextFiles(session.cwd);
+  const fresh = !session.messages.length;
   const banner = [
-    `${a.accent(a.bold("rcode"))} ${a.gray("v" + VERSION)}  ${a.gray("·")} ${session.model.provider}/${session.model.id} ${a.gray("·")} ${session.mode}`,
+    `${a.accent(a.bold("rcode"))} ${a.gray("v" + VERSION)}  ${a.gray("·")} ${session.needsModel ? a.yellow("no model yet") : `${session.model.provider}/${session.model.id}`} ${a.gray("·")} ${session.mode}`,
     a.gray(`${session.cwd}${ctxFiles.length ? ` · ${ctxFiles.map((f) => basename(f.path)).join(", ")}` : ""} · ${session.commands.length} workflows · ${session.agentDefs.length} agents · ${session.skills.length} skills`),
-    session.messages.length ? a.gray(`resumed session with ${session.messages.length} messages`) : a.gray("/help for commands · shift+tab cycles approval mode · esc interrupts"),
+    fresh ? a.gray("/help for commands · shift+tab cycles approval mode · esc interrupts") : a.gray(`resumed session with ${session.messages.length} messages`),
     "",
+    ...(session.needsModel ? [a.yellow(WELCOME.join("\n")), ""]
+      : fresh && !initialPrompt ? [a.gray("Try one (type its number):"), ...ideas.map((s, i) => `  ${a.accent(String(i + 1))} ${s}`), ""] : []),
   ];
   commit(banner);
   if (initialPrompt) void send(initialPrompt);

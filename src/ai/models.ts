@@ -110,6 +110,10 @@ export function defaultModelRef(overrides: Record<string, string> = {}): string 
   if (has("openai")) return "openai/gpt-5";
   if (has("google")) return "google/gemini-2.5-pro";
   if (has("openrouter")) return "openrouter/anthropic/claude-opus-5-5";
+  if (has("xai")) return "xai/grok-4";
+  if (has("deepseek")) return "deepseek/deepseek-chat";
+  if (has("groq")) return "groq/openai/gpt-oss-120b";
+  if (has("cerebras")) return "cerebras/gpt-oss-120b";
   return "ollama/qwen3-coder";
 }
 

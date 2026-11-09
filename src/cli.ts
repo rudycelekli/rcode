@@ -115,6 +115,12 @@ async function main() {
     if (piped) prompt = prompt ? `${prompt}\n\n<stdin>\n${piped}\n</stdin>` : piped;
     if (!prompt.trim()) { console.error("No prompt given."); return 2; }
     const session = await new AgentSession({ ...baseOpts, mode: mode ?? "auto-edit" }).init();
+    if (session.needsModel) {
+      const { WELCOME } = await import("./core/welcome.ts");
+      console.error([...WELCOME.slice(0, 1), "  • rcode login <provider> <key>   (anthropic, openai, google, openrouter, groq, xai)", WELCOME[3]].join("\n"));
+      await session.dispose();
+      return 2;
+    }
     const { runPrint } = await import("./modes/print.ts");
     const code = await runPrint(session, prompt, { json: !!values.json, quiet: !!values.quiet });
     await session.dispose();
