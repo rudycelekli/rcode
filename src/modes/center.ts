@@ -433,7 +433,7 @@ iframe.visual{width:100%;height:260px;border:1px solid var(--bd);border-radius:1
 pre.diff{font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px;overflow:auto;max-height:240px;white-space:pre}
 label{color:var(--mut);display:flex;gap:6px;align-items:center}
 ${SKIN_CSS}
-@media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto}#side{border-right:0;border-bottom:1px solid var(--bd);max-height:34dvh}}
+@media(max-width:800px){body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto}header,#dock{grid-column:1/-1}header{flex-wrap:wrap;gap:8px 12px}#dock{flex-wrap:wrap}#dock button{flex:1 1 auto}#side{border-right:0;border-bottom:1px solid var(--bd);max-height:34dvh}#bar{overflow-x:auto;flex-wrap:nowrap}}
 </style></head><body>
 <header><b>RCODE</b><span>center</span><select id="engine" title="Who does the work"><option value="rcode">rcode</option><option value="claude">Claude plan</option><option value="codex">Codex plan</option><option value="agent">Any agent</option></select><input id="agentcmd" placeholder="grok acp" title="Command that speaks the Agent Client Protocol" style="display:none"><span id="cwd"></span></header>
 <nav id="side"></nav>
@@ -446,7 +446,7 @@ let ws, active=null, threads=[], recent=[], jobs=[], queueRunning=false, models=
 function watchDevice(d){watching=d;let img=document.getElementById("screen");if(!img){img=document.createElement("img");img.id="screen";img.alt="device";img.style.maxWidth="320px";img.style.borderRadius="10px";img.style.cursor="crosshair";log.appendChild(img);img.onclick=ev=>{const r=img.getBoundingClientRect();const x=Math.round((ev.clientX-r.left)/r.width*img.naturalWidth);const y=Math.round((ev.clientY-r.top)/r.height*img.naturalHeight);ws.send(JSON.stringify({type:"device",action:"tap",id:watching.id,kind:watching.kind,x,y}))};const keys=el("div");for(const [action,label] of [["home","Home"],["back","Back"]]){const b=el("button",null,label);b.onclick=()=>ws.send(JSON.stringify({type:"device",action,id:watching.id,kind:watching.kind}));keys.appendChild(b)}log.appendChild(keys)}clearInterval(watchTimer);const tick=()=>{if(!watching)return;img.src="/device/frame?token="+encodeURIComponent(tok)+"&id="+encodeURIComponent(watching.id)+"&kind="+watching.kind+"&t="+Date.now()};tick();watchTimer=setInterval(tick,900)}
 const view={};
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}
-function focus(id,messages){active=id;view[id]=messages||view[id]||[];paint();if(messages){log.replaceChildren();for(const m of messages)addLine(m.role==="user"?"you":"m",m.text)}}
+function focus(id,messages){active=id;view[id]=messages||view[id]||[];paint();if(messages){log.replaceChildren();for(const m of messages){const d=addLine(m.role==="user"?"you":"m",m.text);if(m.role!=="user")d.classList.add("said")}}}
 function addLine(cls,text){const d=el("div",cls,text);log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
 function thread(){return threads.find(t=>t.id===active)}
 function paint(){
@@ -489,7 +489,7 @@ function paint(){
   bar.appendChild(el("span","chip","$"+Number(t.cost||0).toFixed(3)));
   const stop=el("button",null,"Stop");stop.onclick=()=>ws.send(JSON.stringify({type:"stop",thread:t.id}));bar.appendChild(stop);
 }
-function drawVisuals(node){if(node.dataset.drew)return;const parts=node.textContent.split("\`\`\`html\\n");if(parts.length<2)return;node.dataset.drew="1";for(let i=1;i<parts.length&&i<=3;i++){const html=parts[i].split("\`\`\`")[0];const f=document.createElement("iframe");f.className="visual";f.setAttribute("sandbox","allow-scripts");f.srcdoc='<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \\'none\\'; img-src data: blob:; style-src \\'unsafe-inline\\'; script-src \\'unsafe-inline\\'; font-src data:"></head><body>'+html+"</body></html>";node.appendChild(f)}}
+function drawVisuals(node){if(node.dataset.drew)return;const raw=node.textContent;if(!raw.includes("\`\`\`html\\n"))return;node.dataset.drew="1";const htmls=[];const prose=raw.replace(/\`\`\`html\\n([\\s\\S]*?)\`\`\`/g,(_,h)=>{htmls.push(h);return ""}).replace(/\\n{3,}/g,"\\n\\n").trim();node.textContent=prose;for(const html of htmls.slice(0,3)){const f=document.createElement("iframe");f.className="visual";f.setAttribute("sandbox","allow-scripts");f.srcdoc='<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \\'none\\'; img-src data: blob:; style-src \\'unsafe-inline\\'; script-src \\'unsafe-inline\\'; font-src data:"></head><body>'+html+"</body></html>";node.appendChild(f)}}
 function conn(){
   ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws?token="+encodeURIComponent(tok));
   ws.onmessage=e=>{const m=JSON.parse(e.data);
@@ -501,7 +501,7 @@ function conn(){
     else if(m.type==="note")addLine("m",m.text);
     else if(m.type==="approval"&&m.thread===active){const d=addLine("m","Approve: "+m.title+"\\n"+m.reason+(m.detail?"\\n"+m.detail:""));for(const[k,lab]of[["allow","Allow"],["allow-session","Always"],["deny","Deny"]]){const b=el("button",null,lab);b.onclick=()=>{ws.send(JSON.stringify({type:"approval",id:m.id,decision:k}));b.disabled=true};d.appendChild(b)}}
     else if(m.type==="evt"&&m.thread===active){const ev=m.evt;
-      if(ev.type==="delta"&&ev.kind==="text"){let d=log.querySelector("[data-live]");if(!d){d=addLine("m","");d.dataset.live="1"}d.textContent+=ev.text;log.scrollTop=log.scrollHeight}
+      if(ev.type==="delta"&&ev.kind==="text"){let d=log.querySelector("[data-live]");if(!d){d=addLine("m","");d.dataset.live="1";d.classList.add("said")}d.textContent+=ev.text;log.scrollTop=log.scrollHeight}
       else if(ev.type==="tool")addLine("tool "+(ev.status==="run"?"":ev.status),(ev.status==="run"?"→ ":"")+(ev.name||"")+" "+(ev.summary||ev.text||""));
       else if(ev.type==="note")addLine("m",ev.text);
       else if(ev.type==="diff"){const p=el("pre","diff",(ev.verdict?ev.verdict+"\\n":"")+ev.text);log.appendChild(p);log.scrollTop=log.scrollHeight}
@@ -526,7 +526,7 @@ if(!SR)mic.disabled=true;else mic.onclick=()=>{const r=new SR();r.onresult=ev=>{
 const file=document.createElement("input");file.type="file";file.hidden=true;file.accept="text/*,.md,.json,.ts,.tsx,.py,.go,.rs,.txt,.csv";
 const attach=el("button",null,"Attach");attach.type="button";attach.onclick=()=>file.click();
 file.onchange=()=>{const f=file.files&&file.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{attached={name:f.name,text:String(rd.result||"")};attach.textContent=f.name.slice(0,18)};rd.readAsText(f)};
-const quote=el("button",null,"Quote");quote.type="button";quote.onclick=()=>{const lines=[...log.querySelectorAll(".m:not(.you)")];const last=lines[lines.length-1];if(!last)return;box.value="> "+last.childNodes[0]&&last.childNodes[0].textContent?last.childNodes[0].textContent.trim().split("\\n").join("\\n> "):last.textContent.trim().split("\\n").join("\\n> ");box.value+="\\n"};
+const quote=el("button",null,"Quote");quote.type="button";quote.onclick=()=>{const lines=[...log.querySelectorAll(".m.said")];const last=lines[lines.length-1];if(!last)return;const said=last.textContent.trim();if(!said)return;box.value="> "+said.split("\\n").join("\\n> ")+"\\n";box.focus()};
 document.getElementById("dock").append(queueBtn,mic,attach,file,quote);
 ${skinScript()}
 const shareBtn=el("button",null,"Share");shareBtn.title="A link for a device that is not on this network. Cloudflare carries it.";shareBtn.onclick=()=>ws&&ws.send(JSON.stringify({type:"share"}));document.querySelector("header").appendChild(shareBtn);
