@@ -12,7 +12,7 @@ import { basename, join } from "node:path";
 import type { Message, UserMessage } from "../ai/types.ts";
 
 export type Entry =
-  | { type: "header"; id: string; version: 1; cwd: string; createdAt: number; parentSession?: string }
+  | { type: "header"; id: string; version: 1; cwd: string; createdAt: number; parentSession?: string; origin?: "mission" }
   | { type: "message"; id: string; parentId: string | null; message: Message }
   | { type: "compaction"; id: string; parentId: string | null; summary: string; firstKeptId: string | null; tokensBefore: number }
   | { type: "leaf"; id: string; leafId: string | null }
@@ -36,12 +36,12 @@ export class Session {
 
   private constructor(readonly file: string, readonly id: string, readonly cwd: string) {}
 
-  static create(cwd: string, opts: { parentSession?: string; ephemeral?: boolean } = {}): Session {
+  static create(cwd: string, opts: { parentSession?: string; ephemeral?: boolean; origin?: "mission" } = {}): Session {
     const id = newId();
     const dir = sessionsDir(cwd);
     const file = opts.ephemeral ? "" : join(dir, `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`);
     const s = new Session(file, id, cwd);
-    s.add({ type: "header", id, version: 1, cwd, createdAt: Date.now(), parentSession: opts.parentSession }, false);
+    s.add({ type: "header", id, version: 1, cwd, createdAt: Date.now(), parentSession: opts.parentSession, ...(opts.origin ? { origin: opts.origin } : {}) }, false);
     return s;
   }
 
@@ -59,8 +59,8 @@ export class Session {
     return s;
   }
 
-  /** Most recent session for a cwd. */
-  static latest(cwd: string): string | undefined { return listSessions(cwd)[0]?.file; }
+  /** Most recent session the user worked in (queued missions are skipped). */
+  static latest(cwd: string): string | undefined { return listSessions(cwd).find((s) => s.origin !== "mission")?.file; }
 
   private ingest(e: Entry) {
     this.entries.push(e);
@@ -161,8 +161,9 @@ export function summaryMessage(summary: string): UserMessage {
   return { role: "user", content: [{ type: "text", text: `<conversation_summary>\nThe earlier part of this conversation was compacted. Summary:\n\n${summary}\n</conversation_summary>` }], timestamp: 0 };
 }
 
-export interface SessionInfo { file: string; id: string; mtime: number; title: string; messages: number }
+export interface SessionInfo { file: string; id: string; mtime: number; title: string; messages: number; origin?: "mission" }
 
+/** Sessions the user sat down in. Queued missions are listed for review but never the "continue" target. */
 export function listSessions(cwd: string, limit = 50): SessionInfo[] {
   const dir = sessionsDir(cwd);
   if (!existsSync(dir)) return [];
@@ -173,14 +174,15 @@ export function listSessions(cwd: string, limit = 50): SessionInfo[] {
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, limit)
     .map(({ file, mtime }) => {
-      let title = "", messages = 0;
+      let title = "", messages = 0, origin: "mission" | undefined;
       try {
         for (const l of readFileSync(file, "utf8").split("\n")) {
           if (!l) continue;
+          if (l.includes('"type":"header"') && l.includes('"origin":"mission"')) origin = "mission";
           if (l.includes('"type":"meta"') && l.includes('"title"')) title = JSON.parse(l).title ?? title;
           if (l.includes('"type":"message"')) { messages++; if (!title && l.includes('"role":"user"')) { const m = JSON.parse(l).message; title = (m.content?.[0]?.text ?? "").slice(0, 80); } }
         }
       } catch {}
-      return { file, id: basename(file, ".jsonl").split("_").pop()!, mtime, title: title || "(untitled)", messages };
+      return { file, id: basename(file, ".jsonl").split("_").pop()!, mtime, title: title || "(untitled)", messages, ...(origin ? { origin } : {}) };
     });
 }

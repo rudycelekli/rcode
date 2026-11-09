@@ -14,7 +14,7 @@ const line = (s: string, n = 90) => s.replace(/\s+/g, " ").slice(0, n);
 /** One job in a fresh session. Same contract as `rcode -p`: the verdict comes from the receipt. */
 export async function runSessionJob(job: Job, opts: { mode?: PermissionMode; model?: string } = {}): Promise<Outcome> {
   const { AgentSession } = await import("../core/session.ts");
-  const session = await new AgentSession({ cwd: job.cwd, mode: opts.mode ?? "auto-edit", model: opts.model }).init();
+  const session = await new AgentSession({ cwd: job.cwd, mode: opts.mode ?? "auto-edit", model: opts.model, origin: "mission" }).init();
   try {
     await session.prompt(job.prompt);
     const last = [...session.messages].reverse().find((m) => m.role === "assistant");

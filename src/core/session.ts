@@ -48,6 +48,8 @@ export interface SessionOptions {
   /** "continue" = latest session for cwd; a path = specific file; undefined = new. */
   resume?: "continue" | string;
   ephemeral?: boolean;
+  /** A queued mission: saved for review, never the session `-c` continues. */
+  origin?: "mission";
   asker?: Asker;
   /** Disable MCP/memory/ruvnet for fast headless runs. */
   minimal?: boolean;
@@ -130,7 +132,7 @@ export class AgentSession {
     // Session persistence
     if (o.resume === "continue") { const f = Session.latest(o.cwd); this.session = f ? Session.open(f) : Session.create(o.cwd, { ephemeral: o.ephemeral }); }
     else if (o.resume) this.session = Session.open(o.resume);
-    else this.session = Session.create(o.cwd, { ephemeral: o.ephemeral });
+    else this.session = Session.create(o.cwd, { ephemeral: o.ephemeral, origin: o.origin });
     if (this.session.meta.model && !o.model) { const m = resolveModel(this.session.meta.model); if (m) this.model = m; }
 
     if (!o.minimal) {

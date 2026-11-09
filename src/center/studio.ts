@@ -50,10 +50,23 @@ export function saveSpill(text: string, name = "paste.txt"): string {
 export function turnDiff(cwd: string, files: string[], maxChars = 6_000): string {
   const root = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (!root.ok) return "";
+  const top = root.out.trim();
   const safe = files.filter((f) => f && !f.startsWith("-") && !f.includes("\0")).slice(0, 20);
   if (!safe.length) return "";
-  const d = git(root.out.trim(), ["diff", "--no-color", "--", ...safe]);
-  const text = (d.out.trim() ? d.out : git(root.out.trim(), ["diff", "--no-color", "HEAD", "--", ...safe]).out).trim();
+  const tracked = new Set(git(top, ["ls-files", "--", ...safe]).out.split("\n").filter(Boolean));
+  const known = safe.filter((f) => tracked.has(f));
+  const fresh = safe.filter((f) => !tracked.has(f));
+  const parts: string[] = [];
+  if (known.length) {
+    const d = git(top, ["diff", "--no-color", "HEAD", "--", ...known]);
+    if (d.out.trim()) parts.push(d.out.trim());
+  }
+  // A file the turn created is untracked: diff it against /dev/null so the new lines show.
+  for (const f of fresh) {
+    const r = spawnSync("git", ["diff", "--no-color", "--no-index", "--", "/dev/null", f], { cwd: top, encoding: "utf8", timeout: 10_000 });
+    if (r.stdout?.trim()) parts.push(r.stdout.trim());
+  }
+  const text = parts.join("\n");
   if (!text) return "";
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n… diff truncated` : text;
 }
