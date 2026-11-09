@@ -21,6 +21,7 @@ import { GUEST_NOTE, runGuest, type GuestEngine } from "../center/guests.ts";
 import { runAcpGuest, splitCommand } from "../center/acp-guest.ts";
 import { addWorktree, claudePlanUsage, codexThreadCount, deviceShot, githubPullRequest, lanHosts, listDevices, saveSpill, spillPaste, turnDiff } from "../center/studio.ts";
 import { deviceArgv, startShare } from "../center/desk.ts";
+import { loadCenterToken } from "../center/token.ts";
 import { SKIN_CSS, skinScript } from "../center/skins.ts";
 import { spawnSync } from "node:child_process";
 
@@ -394,7 +395,7 @@ export async function startCenter(opts: CenterOptions) {
 }
 
 export async function runCenter(opts: CenterOptions): Promise<number> {
-  const c = await startCenter(opts);
+  const c = await startCenter({ ...opts, token: opts.token ?? loadCenterToken() });
   const reach = opts.host === "0.0.0.0"
     ? "This link works on your network. Anyone who has it can drive the agent. The link is the key."
     : "This page stays on this computer. rcode center --lan opens it to your network.";

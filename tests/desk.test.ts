@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deviceArgv, startShare, tunnelUrl, writeDesktopApp } from "../src/center/desk.ts";
+import { loadCenterToken } from "../src/center/token.ts";
 import { parseSimctlAll } from "../src/center/studio.ts";
 
 describe("desk", () => {
@@ -36,12 +38,37 @@ describe("desk", () => {
     expect(all.map((d) => d.state)).toEqual(["Shutdown", "Booted"]);
   });
 
-  test("the desktop launcher is a bundle that starts the center", () => {
+  test("the center link keeps the same key, and a broken key file is replaced", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rcode-key-"));
+    const first = loadCenterToken(dir);
+    expect(loadCenterToken(dir)).toBe(first);
+    expect(statSync(join(dir, "center.token")).mode & 0o777).toBe(0o600);
+    writeFileSync(join(dir, "center.token"), "nope\n");
+    expect(loadCenterToken(dir)).not.toBe("nope");
+    expect(loadCenterToken(dir)).toMatch(/^[A-Za-z0-9_-]{16,}$/);
+  });
+
+  test("the desktop launcher is a bundle that starts the center and opens it", () => {
     const dest = join(mkdtempSync(join(tmpdir(), "rcode-app-")), process.platform === "darwin" ? "Rcode.app" : "apps");
     const path = writeDesktopApp({ exe: "/usr/bin/rcode", args: ["center"], dest });
-    const text = readFileSync(process.platform === "darwin" ? join(path, "Contents", "MacOS", "rcode") : path, "utf8");
+    const text = readFileSync(process.platform === "darwin" ? join(path, "Contents", "MacOS", "rcode") : join(dest, "rcode-center.sh"), "utf8");
     expect(text).toContain("center");
     expect(text).toContain("/usr/bin/rcode");
+    expect(text).toContain("open");
+    expect(text).toContain("xdg-open");
     if (process.platform === "darwin") expect(readFileSync(join(path, "Contents", "Info.plist"), "utf8")).toContain("ai.rcode.center");
+
+    const root = mkdtempSync(join(tmpdir(), "rcode-open-"));
+    const fake = join(root, "rcode");
+    const opened = join(root, "opened");
+    writeFileSync(fake, "#!/bin/sh\necho 'rcode center  http://127.0.0.1:7799/?token=abc'\nsleep 2\n");
+    writeFileSync(join(root, "open"), `#!/bin/sh\nprintf '%s' "$1" > '${opened}'\n`);
+    writeFileSync(join(root, "xdg-open"), "#!/bin/sh\nexit 0\n");
+    for (const f of [fake, join(root, "open"), join(root, "xdg-open")]) chmodSync(f, 0o755);
+    const app = writeDesktopApp({ exe: fake, args: ["center"], dest: join(root, "Rcode.app") });
+    const script = process.platform === "darwin" ? join(app, "Contents", "MacOS", "rcode") : join(app, "rcode-center.sh");
+    const ran = spawnSync(script, { env: { ...process.env, PATH: `${root}:${process.env.PATH}` }, timeout: 8000 });
+    expect(ran.status).toBe(0);
+    expect(readFileSync(opened, "utf8")).toBe("http://127.0.0.1:7799/?token=abc");
   });
 });

@@ -92,12 +92,43 @@ export function writeDesktopApp(o: { exe: string; args: string[]; dest: string }
 </dict></plist>
 `);
     const bin = join(mac, "rcode");
-    writeFileSync(bin, `#!/bin/sh\nexec ${cmd}\n`);
+    writeFileSync(bin, launcher(cmd));
     chmodSync(bin, 0o755);
     return o.dest;
   }
   mkdirSync(o.dest, { recursive: true });
+  const bin = join(o.dest, "rcode-center.sh");
+  writeFileSync(bin, launcher(cmd));
+  chmodSync(bin, 0o755);
   const file = join(o.dest, "rcode.desktop");
-  writeFileSync(file, `[Desktop Entry]\nType=Application\nName=Rcode\nExec=${cmd}\nTerminal=true\nCategories=Development;\n`);
+  writeFileSync(file, `[Desktop Entry]\nType=Application\nName=Rcode\nExec=${bin}\nTerminal=false\nCategories=Development;\n`);
   return file;
+}
+
+/** Starts the center, then opens the link it prints. Quitting the app stops the center. */
+function launcher(cmd: string): string {
+  return `#!/bin/sh
+log=$(mktemp)
+${cmd} >"$log" 2>&1 &
+pid=$!
+trap 'kill "$pid" 2>/dev/null; rm -f "$log"' EXIT
+url=
+i=0
+while [ "$i" -lt 40 ]; do
+  url=$(sed -n 's/^rcode center  //p' "$log" | head -n 1)
+  [ -n "$url" ] && break
+  kill -0 "$pid" 2>/dev/null || break
+  i=$((i + 1))
+  sleep 0.25
+done
+if [ -z "$url" ]; then
+  echo "rcode center did not start" >&2
+  exit 1
+fi
+if command -v open >/dev/null 2>&1; then open "$url"
+elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$url"
+else echo "$url"
+fi
+wait "$pid"
+`;
 }

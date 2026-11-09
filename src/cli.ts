@@ -34,7 +34,7 @@ Usage:
   rcode login <provider> [key]   Store an API key (anthropic, openai, google, openrouter, telegram, …)
   rcode update                   Update to the latest release (compiled binary)
   rcode gateway                  Talk to rcode from your phone: Telegram + web UI (pair/install/uninstall)
-  rcode center [--lan] [--share] Local command center. --lan is your network. --share is a cloudflared link off it
+  rcode center [--lan] [--share] [--token <key>]  Local command center. The link stays the same between launches. --lan is your network. --share is a cloudflared link off it
   rcode app                      Install a double-clickable Rcode app that opens the center
   rcode eval <suite.json>        Run a deterministic eval suite (Wilson 95% CI)
   rcode handoff [file]           Print a resume brief (or write it when a path is given)
@@ -78,7 +78,7 @@ async function main() {
       continue: { type: "boolean", short: "c" }, resume: { type: "string", short: "r" },
       plan: { type: "boolean" }, yes: { type: "boolean", short: "y" }, "auto-edit": { type: "boolean" },
       tools: { type: "string" }, minimal: { type: "boolean" }, plain: { type: "boolean" }, "no-session": { type: "boolean" },
-      user: { type: "boolean" }, cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, lan: { type: "boolean" }, share: { type: "boolean" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
+      user: { type: "boolean" }, cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, lan: { type: "boolean" }, share: { type: "boolean" }, token: { type: "string" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
       version: { type: "boolean", short: "v" }, help: { type: "boolean", short: "h" },
     },
   });
@@ -91,7 +91,7 @@ async function main() {
   const sub = positionals[0];
   if (sub === "center" && !values.print) {
     const { runCenter } = await import("./modes/center.ts");
-    return runCenter({ cwd, port: values.port ? Number(values.port) : undefined, host: (values.host as string | undefined) ?? (values.lan ? "0.0.0.0" : undefined), share: !!values.share, model: values.model as string | undefined });
+    return runCenter({ cwd, port: values.port ? Number(values.port) : undefined, host: (values.host as string | undefined) ?? (values.lan ? "0.0.0.0" : undefined), share: !!values.share, token: values.token as string | undefined, model: values.model as string | undefined });
   }
   if (sub === "app" && !values.print) {
     const { writeDesktopApp } = await import("./center/desk.ts");
