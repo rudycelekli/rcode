@@ -14,6 +14,7 @@ import { AgentSession } from "../core/session.ts";
 import { add, clearFinished, drain, load, type Job } from "../core/queue.ts";
 import { listSessions } from "../session/store.ts";
 import { runSessionJob } from "./queue.ts";
+import { GUEST_NOTE, runGuest, type GuestEngine } from "../center/guests.ts";
 
 type Sock = ServerWebSocket<{ id: string }>;
 
@@ -70,6 +71,7 @@ export async function startCenter(opts: CenterOptions) {
   const host = opts.host ?? "127.0.0.1";
   const file = opts.queueFile;
   const threads = new Map<string, AgentSession>();
+  const guests = new Map<string, { id: string; engine: GuestEngine; title: string; running: boolean; warned: boolean; stop?: () => void }>();
   const approvals = new Map<string, (d: "allow" | "allow-session" | "deny") => void>();
   const sockets = new Set<Sock>();
   let queueRunning = false;
@@ -102,8 +104,43 @@ export async function startCenter(opts: CenterOptions) {
     return {
       id: s.session.id, title: titleOf(s), model: `${s.model.provider}/${s.model.id}`, mode: s.mode, plain: s.plain,
       needsModel: s.needsModel, running: s.isRunning, cost: s.agent.usage.cost.total,
-      receipt: r ? { hash: r.hash, verdict: r.verdict } : null,
+      receipt: r ? { hash: r.hash, verdict: r.verdict } : null, guest: false,
     };
+  }
+
+  function guestState(g: { id: string; engine: GuestEngine; title: string; running: boolean }) {
+    return { id: g.id, title: g.title, model: g.engine === "claude" ? "Claude plan" : "Codex plan", mode: "guest", plain: false, needsModel: false, running: g.running, cost: 0, receipt: null, guest: true, engine: g.engine };
+  }
+
+  const engineOf = (v: unknown): "rcode" | GuestEngine => (v === "claude" || v === "codex" ? v : "rcode");
+
+  async function guestTurn(engine: GuestEngine, text: string, existing?: string) {
+    let g = existing ? guests.get(existing) : undefined;
+    if (g?.running) { broadcast({ type: "evt", thread: g.id, evt: { type: "note", level: "warn", text: "Still working. Stop it before sending more." } }); return; }
+    if (!g || g.engine !== engine) {
+      g = { id: randomBytes(4).toString("hex"), engine, title: text.slice(0, 80), running: false, warned: false };
+      guests.set(g.id, g);
+      broadcast({ type: "focus", id: g.id, messages: [] });
+    }
+    if (g.title === "New thread") g.title = text.slice(0, 80);
+    if (!g.warned) { g.warned = true; broadcast({ type: "evt", thread: g.id, evt: { type: "note", level: "warn", text: GUEST_NOTE[engine] } }); }
+    broadcast({ type: "you", thread: g.id, text: text.slice(0, 4000) });
+    g.running = true;
+    broadcast({ type: "thread", thread: guestState(g) });
+    const ac = new AbortController();
+    g.stop = () => ac.abort();
+    await runGuest({
+      engine, prompt: text, cwd: opts.cwd, signal: ac.signal,
+      onEvent: (e) => {
+        if (e.type === "delta") broadcast({ type: "evt", thread: g!.id, evt: { type: "delta", kind: "text", text: e.text } });
+        else if (e.type === "tool") broadcast({ type: "evt", thread: g!.id, evt: e });
+        else if (e.error) broadcast({ type: "evt", thread: g!.id, evt: { type: "note", level: "error", text: e.error } });
+      },
+    });
+    g.running = false;
+    g.stop = undefined;
+    broadcast({ type: "evt", thread: g.id, evt: { type: "turn" } });
+    broadcast({ type: "thread", thread: guestState(g) });
   }
 
   async function open(resume?: string): Promise<AgentSession> {
@@ -152,13 +189,25 @@ export async function startCenter(opts: CenterOptions) {
     websocket: {
       open(ws: Sock) {
         sockets.add(ws);
-        send(ws, { type: "ready", cwd: opts.cwd, models: MODELS, recent: recent(), jobs: jobs(), threads: [...threads.values()].map(stateOf) });
+        const live: object[] = [...threads.values()].map(stateOf);
+        live.push(...[...guests.values()].map(guestState));
+        send(ws, { type: "ready", cwd: opts.cwd, models: MODELS, recent: recent(), jobs: jobs(), threads: live });
       },
       close(ws: Sock) { sockets.delete(ws); },
       async message(ws: Sock, raw) {
         let m: any; try { m = JSON.parse(String(raw)); } catch { return; }
         try {
-          if (m.type === "new") { const s = await open(); send(ws, { type: "focus", id: s.session.id, messages: [] }); return; }
+          if (m.type === "new") {
+            const engine = engineOf(m.engine);
+            if (engine !== "rcode") {
+              const g = { id: randomBytes(4).toString("hex"), engine, title: "New thread", running: false, warned: false };
+              guests.set(g.id, g);
+              send(ws, { type: "focus", id: g.id, messages: [] });
+              broadcast({ type: "thread", thread: guestState(g) });
+              return;
+            }
+            const s = await open(); send(ws, { type: "focus", id: s.session.id, messages: [] }); return;
+          }
           if (m.type === "open" && typeof m.file === "string") {
             const s = await open(m.file);
             send(ws, { type: "focus", id: s.session.id, messages: transcript(s) });
@@ -166,6 +215,13 @@ export async function startCenter(opts: CenterOptions) {
             return;
           }
           if (m.type === "prompt" && typeof m.text === "string" && m.text.trim()) {
+            const engine = engineOf(m.engine);
+            const text = m.text.trim();
+            if (engine !== "rcode") {
+              const same = m.thread && guests.get(String(m.thread))?.engine === engine ? String(m.thread) : undefined;
+              await guestTurn(engine, text, same);
+              return;
+            }
             const s = (m.thread && threads.get(m.thread)) || await open();
             if (!m.thread) send(ws, { type: "focus", id: s.session.id, messages: transcript(s) });
             if (s.needsModel) { broadcast({ type: "evt", thread: s.session.id, evt: { type: "note", level: "warn", text: "No model yet. Pick Claude (your plan) after `claude` → /login, or set a model." } }); return; }
@@ -174,8 +230,8 @@ export async function startCenter(opts: CenterOptions) {
             broadcast({ type: "thread", thread: stateOf(s) });
             return;
           }
+          if (m.type === "stop") { threads.get(String(m.thread))?.abort(); guests.get(String(m.thread))?.stop?.(); return; }
           const s = m.thread ? threads.get(String(m.thread)) : undefined;
-          if (m.type === "stop" && s) { s.abort(); return; }
           if (m.type === "mode" && s) { s.setMode(m.mode); broadcast({ type: "thread", thread: stateOf(s) }); return; }
           if (m.type === "plain" && s) { s.setPlain(!!m.on); broadcast({ type: "thread", thread: stateOf(s) }); return; }
           if (m.type === "model" && s && typeof m.ref === "string") {
@@ -208,7 +264,7 @@ export async function startCenter(opts: CenterOptions) {
   const url = `http://${shownHost}:${server.port}/?token=${token}`;
   return {
     url, token, port: server.port,
-    stop: () => { server.stop(true); for (const s of threads.values()) void s.dispose(); },
+    stop: () => { server.stop(true); for (const s of threads.values()) void s.dispose(); for (const g of guests.values()) g.stop?.(); },
   };
 }
 
@@ -246,7 +302,7 @@ h3{margin:14px 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercas
 label{color:var(--mut);display:flex;gap:6px;align-items:center}
 @media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto}#side{border-right:0;border-bottom:1px solid var(--bd);max-height:34dvh}}
 </style></head><body>
-<header><b>RCODE</b><span>center</span><span id="cwd"></span></header>
+<header><b>RCODE</b><span>center</span><select id="engine" title="Who does the work"><option value="rcode">rcode</option><option value="claude">Claude plan</option><option value="codex">Codex plan</option></select><span id="cwd"></span></header>
 <nav id="side"></nav>
 <section id="main"><div id="bar"></div><div id="log"></div></section>
 <form id="dock"><textarea id="box" rows="1" placeholder="Ask, or queue it as a mission. Enter sends, Shift+Enter adds a line."></textarea><button class="acc" id="send">Send</button></form>
@@ -261,7 +317,7 @@ function addLine(cls,text){const d=el("div",cls,text);log.appendChild(d);log.scr
 function thread(){return threads.find(t=>t.id===active)}
 function paint(){
   side.replaceChildren();
-  const a=el("button","acc","New thread");a.onclick=()=>ws.send(JSON.stringify({type:"new"}));side.appendChild(a);
+  const a=el("button","acc","New thread");a.onclick=()=>ws.send(JSON.stringify({type:"new",engine:document.getElementById("engine").value}));side.appendChild(a);
   const h1=el("h3",null,"Threads");side.appendChild(h1);
   const all=[...threads];
   if(!all.length)side.appendChild(el("div","chip","No live thread yet."));
@@ -278,6 +334,7 @@ function paint(){
   bar.replaceChildren();
   const t=thread();
   if(!t){bar.appendChild(el("span","chip","Start a thread, or open a recent one."));return}
+  if(t.guest){bar.appendChild(el("span","chip",t.model+" · its own tools, outside rcode's checks"));const stop=el("button",null,"Stop");stop.onclick=()=>ws.send(JSON.stringify({type:"stop",thread:t.id}));bar.appendChild(stop);return}
   for(const ref of models){const b=el("button",null,ref.replace("claude-cli/","claude "));if(t.model===ref)b.className="acc";b.onclick=()=>ws.send(JSON.stringify({type:"model",thread:t.id,ref:ref}));bar.appendChild(b)}
   const sel=el("select");for(const mode of["ask","auto-edit","full","plan"]){const o=el("option",null,mode);o.value=mode;if(mode===t.mode)o.selected=true;sel.appendChild(o)}sel.onchange=()=>ws.send(JSON.stringify({type:"mode",thread:t.id,mode:sel.value}));bar.appendChild(sel);
   const plain=el("label");const cb=document.createElement("input");cb.type="checkbox";cb.checked=!!t.plain;cb.onchange=()=>ws.send(JSON.stringify({type:"plain",thread:t.id,on:cb.checked}));plain.append(cb,document.createTextNode("plain"));bar.appendChild(plain);
@@ -308,7 +365,7 @@ conn();
 box.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();document.getElementById("dock").requestSubmit()}});
 document.getElementById("dock").onsubmit=e=>{e.preventDefault();const v=box.value.trim();if(!v||!ws)return;box.value="";
   if(e.submitter&&e.submitter.id!=="send"){ws.send(JSON.stringify({type:"queue-add",text:v}));return}
-  ws.send(JSON.stringify({type:"prompt",thread:active,text:v}))};
+  ws.send(JSON.stringify({type:"prompt",thread:active,text:v,engine:document.getElementById("engine").value}))};
 const queueBtn=el("button",null,"Queue");queueBtn.type="button";queueBtn.onclick=()=>{const v=box.value.trim();if(!v)return;box.value="";ws.send(JSON.stringify({type:"queue-add",text:v}))};
 document.getElementById("dock").appendChild(queueBtn);
 </script></body></html>`;

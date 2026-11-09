@@ -26,7 +26,8 @@ describe("command center", () => {
       expect((await fetch(`http://127.0.0.1:${c.port}/`)).status).toBe(401);
       const page = await (await fetch(c.url)).text();
       expect(page).toContain("Missions");
-      expect(page).toContain("New thread");
+      expect(page).toContain("Claude plan");
+      expect(page).toContain("Codex plan");
       const ws = new WebSocket(`ws://127.0.0.1:${c.port}/ws?token=${c.token}`);
       const ready = once(ws, "ready");
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
