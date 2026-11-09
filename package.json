@@ -1,6 +1,6 @@
 {
   "name": "rcode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "rcode — the open, fast, extensible coding agent. Terminal-first, any model, MCP-native, with built-in memory and multi-agent orchestration.",
   "type": "module",
   "license": "MIT",
