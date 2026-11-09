@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "id": "edit-hello",
+      "prompt": "Change hello to hi in a.txt",
+      "files": { "a.txt": "hello\n" },
+      "script": [
+        { "tools": [{ "name": "read", "args": { "path": "a.txt" } }] },
+        { "tools": [{ "name": "edit", "args": { "path": "a.txt", "edits": [{ "old_text": "hello", "new_text": "hi" }] } }] },
+        "done"
+      ],
+      "graders": [
+        { "type": "file_contains", "path": "a.txt", "text": "hi" },
+        { "type": "file_not_contains", "path": "a.txt", "text": "hello" },
+        { "type": "transcript_contains", "text": "done" }
+      ]
+    },
+    {
+      "id": "bash-writes",
+      "prompt": "Write ok into out.txt",
+      "files": {},
+      "script": [
+        { "tools": [{ "name": "bash", "args": { "command": "printf ok > out.txt" } }] },
+        "wrote out.txt"
+      ],
+      "graders": [
+        { "type": "file_contains", "path": "out.txt", "text": "ok" },
+        { "type": "command", "command": "test -s out.txt", "exit": 0 }
+      ]
+    }
+  ]
+}
