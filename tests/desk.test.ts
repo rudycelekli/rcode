@@ -65,8 +65,9 @@ describe("desk", () => {
     writeFileSync(join(root, "open"), `#!/bin/sh\nprintf '%s' "$1" > '${opened}'\n`);
     writeFileSync(join(root, "xdg-open"), "#!/bin/sh\nexit 0\n");
     for (const f of [fake, join(root, "open"), join(root, "xdg-open")]) chmodSync(f, 0o755);
-    const app = writeDesktopApp({ exe: fake, args: ["center"], dest: join(root, "Rcode.app") });
-    const script = process.platform === "darwin" ? join(app, "Contents", "MacOS", "rcode") : join(app, "rcode-center.sh");
+    const launchAt = join(root, process.platform === "darwin" ? "Rcode.app" : "apps");
+    writeDesktopApp({ exe: fake, args: ["center"], dest: launchAt });
+    const script = process.platform === "darwin" ? join(launchAt, "Contents", "MacOS", "rcode") : join(launchAt, "rcode-center.sh");
     const ran = spawnSync(script, { env: { ...process.env, PATH: `${root}:${process.env.PATH}` }, timeout: 8000 });
     expect(ran.status).toBe(0);
     expect(readFileSync(opened, "utf8")).toBe("http://127.0.0.1:7799/?token=abc");
