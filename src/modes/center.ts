@@ -21,6 +21,7 @@ import { GUEST_NOTE, runGuest, type GuestEngine } from "../center/guests.ts";
 import { runAcpGuest, splitCommand } from "../center/acp-guest.ts";
 import { addWorktree, claudePlanUsage, codexThreadCount, deviceShot, githubPullRequest, lanHosts, listDevices, saveSpill, spillPaste, turnDiff } from "../center/studio.ts";
 import { deviceArgv, startShare } from "../center/desk.ts";
+import { SKIN_CSS, skinScript } from "../center/skins.ts";
 import { spawnSync } from "node:child_process";
 
 function composePrompt(text: string, file?: { name?: string; text?: string }): string {
@@ -403,24 +404,24 @@ export async function runCenter(opts: CenterOptions): Promise<number> {
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0c0c0e"><link rel="manifest" href="/manifest.webmanifest">
 <title>rcode center</title><style>
-:root{--bg:#0c0c0e;--fg:#eceae6;--mut:#8d8d93;--acc:#ff8a3d;--ok:#7dcea0;--bad:#e06c75;--card:#151518;--bd:#2a2a30;--line:#222228}
+:root{--bg:#0c0c0e;--fg:#eceae6;--mut:#8d8d93;--acc:#ff8a3d;--ok:#7dcea0;--bad:#e06c75;--card:#151518;--bd:#2a2a30;--line:#222228;--you:#2a2118;--youbd:#4a341f;--onacc:#1a120c;--size:14px;--r:10px;--d:1}
 *{box-sizing:border-box}html,body{margin:0;height:100%}
-body{background:var(--bg);color:var(--fg);font:14px/1.45 ui-sans-serif,system-ui,-apple-system;display:grid;grid-template-columns:280px 1fr;grid-template-rows:auto minmax(0,1fr) auto;height:100dvh;overflow:hidden}
-header{grid-column:1/3;display:flex;gap:14px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--bd)}
+body{background:var(--bg);color:var(--fg);font:var(--size)/1.45 ui-sans-serif,system-ui,-apple-system;display:grid;grid-template-columns:280px 1fr;grid-template-rows:auto minmax(0,1fr) auto;height:100dvh;overflow:hidden}
+header{grid-column:1/3;display:flex;gap:14px;align-items:center;padding:calc(10px*var(--d)) 16px;border-bottom:1px solid var(--bd)}
 header b{color:var(--acc);letter-spacing:.04em}#cwd{color:var(--mut);font:12px/1 ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #side{border-right:1px solid var(--bd);overflow:auto;padding:12px;min-height:0}
 #main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
 #bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--bd)}
-#log{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+#log{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:calc(8px*var(--d))}
 #dock{grid-column:1/3;display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)}
-textarea{flex:1;resize:none;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:10px;padding:10px;font:inherit;min-height:44px;max-height:30vh}
-button,select,header input{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:5px 10px}button,select{cursor:pointer}
-button.acc{background:var(--acc);color:#1a120c;border:0;font-weight:650}
+textarea{flex:1;resize:none;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:var(--r);padding:10px;font:inherit;min-height:44px;max-height:30vh}
+button,select,header input{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:calc(var(--r)*.8);padding:calc(5px*var(--d)) 10px}button,select{cursor:pointer}
+button.acc{background:var(--acc);color:var(--onacc);border:0;font-weight:650}
 h3{margin:14px 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);font-weight:650}
-.item{padding:7px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}.item:hover{background:var(--card)}.item.on{border-color:var(--acc);background:var(--card)}
+.item{padding:calc(7px*var(--d)) 8px;border-radius:calc(var(--r)*.8);cursor:pointer;border:1px solid transparent}.item:hover{background:var(--card)}.item.on{border-color:var(--acc);background:var(--card)}
 .item small{display:block;color:var(--mut);font-size:11px}
-.m{padding:8px 10px;border-radius:10px;background:var(--card);border:1px solid var(--bd);white-space:pre-wrap;word-wrap:break-word;max-width:860px}
-.you{align-self:flex-end;background:#2a2118;border-color:#4a341f}
+.m{padding:calc(8px*var(--d)) 10px;border-radius:var(--r);background:var(--card);border:1px solid var(--bd);white-space:pre-wrap;word-wrap:break-word;max-width:860px}
+.you{align-self:flex-end;background:var(--you);border-color:var(--youbd)}
 .tool{font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--mut);border-left:2px solid var(--bd);padding:2px 8px}
 .tool.ok{border-color:var(--ok)}.tool.fail{border-color:var(--bad);color:var(--bad)}
 .chip{font:12px/1 ui-monospace,Menlo,monospace;color:var(--mut)}
@@ -428,6 +429,7 @@ h3{margin:14px 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercas
 iframe.visual{width:100%;height:260px;border:1px solid var(--bd);border-radius:10px;background:#fff}
 pre.diff{font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px;overflow:auto;max-height:240px;white-space:pre}
 label{color:var(--mut);display:flex;gap:6px;align-items:center}
+${SKIN_CSS}
 @media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto}#side{border-right:0;border-bottom:1px solid var(--bd);max-height:34dvh}}
 </style></head><body>
 <header><b>RCODE</b><span>center</span><select id="engine" title="Who does the work"><option value="rcode">rcode</option><option value="claude">Claude plan</option><option value="codex">Codex plan</option><option value="agent">Any agent</option></select><input id="agentcmd" placeholder="grok acp" title="Command that speaks the Agent Client Protocol" style="display:none"><span id="cwd"></span></header>
@@ -518,10 +520,11 @@ const queueBtn=el("button",null,"Queue");queueBtn.type="button";queueBtn.onclick
 const mic=el("button",null,"Speak");mic.type="button";mic.title="Dictation stays in this browser. rcode never receives the audio.";
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(!SR)mic.disabled=true;else mic.onclick=()=>{const r=new SR();r.onresult=ev=>{box.value=(box.value+" "+ev.results[0][0].transcript).trim()};r.onend=()=>{mic.textContent="Speak"};mic.textContent="Listening…";r.start()};
-const file=document.createElement("input");file.type="file";file.accept="text/*,.md,.json,.ts,.tsx,.py,.go,.rs,.txt,.csv";
+const file=document.createElement("input");file.type="file";file.hidden=true;file.accept="text/*,.md,.json,.ts,.tsx,.py,.go,.rs,.txt,.csv";
 const attach=el("button",null,"Attach");attach.type="button";attach.onclick=()=>file.click();
 file.onchange=()=>{const f=file.files&&file.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{attached={name:f.name,text:String(rd.result||"")};attach.textContent=f.name.slice(0,18)};rd.readAsText(f)};
 const quote=el("button",null,"Quote");quote.type="button";quote.onclick=()=>{const lines=[...log.querySelectorAll(".m:not(.you)")];const last=lines[lines.length-1];if(!last)return;box.value="> "+last.childNodes[0]&&last.childNodes[0].textContent?last.childNodes[0].textContent.trim().split("\\n").join("\\n> "):last.textContent.trim().split("\\n").join("\\n> ");box.value+="\\n"};
 document.getElementById("dock").append(queueBtn,mic,attach,file,quote);
+${skinScript()}
 const shareBtn=el("button",null,"Share");shareBtn.title="A link for a device that is not on this network. Cloudflare carries it.";shareBtn.onclick=()=>ws&&ws.send(JSON.stringify({type:"share"}));document.querySelector("header").appendChild(shareBtn);
 </script></body></html>`;
