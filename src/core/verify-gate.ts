@@ -7,6 +7,12 @@
 const VERIFY_CMD = /\b(test|tests|pytest|jest|vitest|mocha|tsc|typecheck|type-check|lint|eslint|ruff|mypy|pyright|clippy|build|compile|cargo\s+(test|check|build|run)|go\s+(test|vet|build|run)|make|npm\s+(run|test)|pnpm|yarn|bun\s+(test|run|x)|deno\s+(test|check)|node\s+\S+\.(m?js|ts)|python3?\s+\S+\.py|ruby\s+\S+\.rb|curl\s+\S*localhost|php\s+\S+|dotnet\s+(test|build)|mvn|gradle|swift\s+(build|test)|xcodebuild)\b/i;
 const HONEST = /\b(unverified|not (been )?(verified|tested|run)|couldn'?t (run|verify|test)|could not (run|verify|test)|didn'?t (run|verify|test)|did not (run|verify|test)|unable to (run|verify|test)|untested)\b/i;
 
+/** A successful call that counts as evidence the change was checked. */
+export function countsAsVerify(name: string, args: Record<string, unknown>): boolean {
+  if (name === "bash" && typeof args.command === "string" && VERIFY_CMD.test(args.command)) return true;
+  return name === "browser" || name === "desktop" || name === "task" || name === "diagnostics";
+}
+
 export class VerifyGate {
   private seq = 0;
   private lastEdit = -1;
@@ -19,8 +25,7 @@ export class VerifyGate {
   onTool(name: string, args: Record<string, unknown>, isError: boolean) {
     this.seq++;
     if ((name === "edit" || name === "write") && !isError) this.lastEdit = this.seq;
-    else if (name === "bash" && typeof args.command === "string" && VERIFY_CMD.test(args.command)) this.lastVerify = this.seq;
-    else if (name === "browser" || name === "desktop" || name === "task") this.lastVerify = Math.max(this.lastVerify, this.seq);
+    else if (!isError && countsAsVerify(name, args)) this.lastVerify = this.seq;
   }
 
   /** Returns a nudge to inject, or undefined to allow stopping. */

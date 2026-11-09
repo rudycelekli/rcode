@@ -33,6 +33,8 @@ Usage:
   rcode login <provider> [key]   Store an API key (anthropic, openai, google, openrouter, telegram, …)
   rcode update                   Update to the latest release (compiled binary)
   rcode gateway                  Talk to rcode from your phone: Telegram + web UI (pair/install/uninstall)
+  rcode eval <suite.json>        Run a deterministic eval suite (Wilson 95% CI)
+  rcode handoff [file]           Print a resume brief (or write it when a path is given)
 
 Options:
   -m, --model <ref>              provider/model or alias (opus, sonnet, haiku, gpt5, gemini, ollama/qwen3-coder)
@@ -81,6 +83,10 @@ async function main() {
   ensureHome();
 
   const sub = positionals[0];
+  if (sub && (sub === "eval" || sub === "handoff") && !values.print) {
+    const { runOffline } = await import("./modes/offline.ts");
+    return runOffline(sub, positionals.slice(1), cwd);
+  }
   if (sub && ["setup", "doctor", "models", "sessions", "login", "acp", "mcp", "gateway", "update"].includes(sub) && !values.print) {
     const { runSubcommand } = await import("./commands.ts");
     return runSubcommand(sub, positionals.slice(1), values as any, cwd);

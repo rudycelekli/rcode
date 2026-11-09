@@ -23,7 +23,10 @@ export async function runPrint(session: AgentSession, prompt: string, opts: { js
   });
   await session.prompt(prompt);
   const u = session.agent.usage;
-  if (!opts.json && !opts.quiet) err.write(`\x1b[2m[${session.model.provider}/${session.model.id} · ${u.input + u.cacheRead} in / ${u.output} out · $${u.cost.total.toFixed(4)}]\x1b[0m\n`);
+  if (!opts.json && !opts.quiet) {
+    if (session.lastReceipt) err.write(`\x1b[2m${session.lastReceipt.hash} · ${session.lastReceipt.verdict}\x1b[0m\n`);
+    err.write(`\x1b[2m[${session.model.provider}/${session.model.id} · ${u.input + u.cacheRead} in / ${u.output} out · $${u.cost.total.toFixed(4)}]\x1b[0m\n`);
+  }
   const last = [...session.messages].reverse().find((m) => m.role === "assistant");
   return last && last.role === "assistant" && last.stopReason === "error" ? 1 : 0;
 }

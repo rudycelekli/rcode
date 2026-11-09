@@ -10,12 +10,13 @@ import { browserTool } from "./browser.ts";
 import { desktopTool } from "./desktop.ts";
 import { findCli } from "./native-cli.ts";
 import { repoMapTool } from "./repomap.ts";
+import { diagnosticsTool } from "./diagnostics.ts";
 
-export { repoMapTool, browserTool, desktopTool, readTool, writeTool, editTool, bashTool, bashOutputTool, bashKillTool, grepTool, globTool, lsTool, todoTool, webFetchTool };
+export { repoMapTool, browserTool, desktopTool, readTool, writeTool, editTool, bashTool, bashOutputTool, bashKillTool, grepTool, globTool, lsTool, todoTool, webFetchTool, diagnosticsTool };
 
 /** Core built-in tools (task/memory/mcp tools are added by the session). */
 export function coreTools(opts: { browser?: boolean; desktop?: boolean } = {}): Tool[] {
-  const tools = [readTool, editTool, writeTool, bashTool, bashOutputTool, bashKillTool, grepTool, globTool, lsTool, repoMapTool, todoTool, webFetchTool] as Tool[];
+  const tools = [readTool, editTool, writeTool, bashTool, bashOutputTool, bashKillTool, grepTool, globTool, lsTool, repoMapTool, todoTool, webFetchTool, diagnosticsTool] as Tool[];
   // Browser/desktop are included when their native CLIs are installed (or forced on in config) — no schema cost otherwise.
   if (opts.browser ?? !!findCli("agent-browser")) tools.push(browserTool as Tool);
   if (opts.desktop ?? !!findCli("agent-desktop")) tools.push(desktopTool as Tool);

@@ -5,10 +5,11 @@ import { rmSync, writeFileSync } from "node:fs";
  * session persistence · compaction · memory injection · steering/follow-up queues · slash commands.
  */
 import { Agent } from "../agent/loop.ts";
-import type { AgentEvent, AgentHooks, Tool } from "../agent/types.ts";
+import type { AgentEvent, AgentHooks, BeforeToolCall, PermissionDecision, Tool } from "../agent/types.ts";
 import { apiKeyFor, defaultModelRef, resolveModel, resolveTier } from "../ai/models.ts";
 import type { Message, Model, ThinkingLevel, UserContent } from "../ai/types.ts";
 import { loadAuth, loadConfig, type RcodeConfig } from "../config.ts";
+import "../config-surface.ts";
 import { buildSystemPrompt, environmentBlock } from "../context/system-prompt.ts";
 import { expandCommand, setClaudeHomeImport, loadAgents, loadCommands, loadSkills, type AgentDef, type Command, type Skill } from "../ext/resources.ts";
 import { ShellHooks } from "../hooks/shell-hooks.ts";
@@ -18,7 +19,7 @@ import { createMemoryTools, getMemory, memoryContext, type MemoryProvider } from
 import { captureLessons, sessionMemoryBlock } from "../memory/capture.ts";
 import { PermissionPolicy, type Asker, type PermissionMode } from "../permissions/policy.ts";
 import { contextTokens, DEFAULT_COMPACTION, findCutPoint, shouldCompact, summarize, type CompactionSettings } from "../session/compaction.ts";
-import { Session } from "../session/store.ts";
+import { Session, RCODE_HOME } from "../session/store.ts";
 import { coreTools, filterTools } from "../tools/index.ts";
 import { createTaskTool } from "../tools/task.ts";
 import { killAllJobs } from "../tools/bash.ts";
@@ -28,6 +29,11 @@ import { Checkpoints } from "./checkpoints.ts";
 import { sandboxBackend } from "../tools/sandbox.ts";
 import { Guards } from "./guards.ts";
 import { RuvnetIntegration } from "../integrations/ruvnet.ts";
+import { ThreatGuard } from "../guard/rules.ts";
+import { buildReceipt, formatReceipt, sealReceipt, type TurnReceipt } from "./receipt.ts";
+import { syntaxNote } from "../tools/diagnostics.ts";
+import { Telemetry } from "../telemetry/beacon.ts";
+import { join } from "node:path";
 
 export interface SessionOptions {
   cwd: string;
@@ -74,6 +80,10 @@ export class AgentSession {
   readonly verifyGate = new VerifyGate();
   checkpoints?: Checkpoints;
   guards = new Guards();
+  threat = new ThreatGuard();
+  lastReceipt?: TurnReceipt;
+  private telemetry?: Telemetry;
+  private promptId = "";
 
   constructor(readonly opts: SessionOptions) {}
 
@@ -93,6 +103,7 @@ export class AgentSession {
 
     this.envBlock = environmentBlock(o.cwd);
     this.guards = new Guards(this.config.guards ?? []);
+    this.threat = new ThreatGuard(this.config.rules !== "off");
     this.policy = new PermissionPolicy(o.mode ?? this.config.permissionMode ?? "ask", { allow: this.config.permissions?.allow ?? [], deny: this.config.permissions?.deny ?? [] }, o.asker);
     this.hooks = new ShellHooks(this.config.hooks ?? [], o.cwd);
     setClaudeHomeImport(!!this.config.compat?.claudeHome);
@@ -127,6 +138,9 @@ export class AgentSession {
     }
 
     this.checkpoints = new Checkpoints(o.cwd, this.session.id, this.config.checkpoints !== false && !o.ephemeral);
+    if (this.config.telemetry !== "off" && !o.minimal && !o.ephemeral) {
+      this.telemetry = new Telemetry(join(RCODE_HOME, "telemetry", "runtime.jsonl"));
+    }
     this.agent = new Agent({
       model: this.model,
       apiKey: apiKeyFor(this.model, this.auth),
@@ -143,7 +157,10 @@ export class AgentSession {
     const ctx = this.session.buildContext();
     this.agent.messages = ctx.messages;
     this.msgIds = ctx.ids;
-    this.agent.subscribe((e) => { for (const l of this.listeners) l(e); });
+    this.agent.subscribe((e) => {
+      for (const l of this.listeners) l(e);
+      if (this.promptId) this.telemetry?.onAgent(this.session.id, this.promptId, e);
+    });
     if (this.hooks.has("SessionStart")) {
       const r = await this.hooks.run("SessionStart", { session_id: this.session.id, source: o.resume ? "resume" : "startup" });
       if (r.context) this.opts.systemPromptAppend = [this.opts.systemPromptAppend, r.context].filter(Boolean).join("\n");
@@ -162,12 +179,13 @@ export class AgentSession {
       agents: () => this.agentDefs,
       maxDepth: 2,
       maxParallel: 6,
+      escalate: this.config.router?.escalate !== false,
       build: (def, depth, tier) => {
         const model = resolveTier(tier ?? def?.model, this.model, this.config.smallModel);
         let tools = filterTools([...coreTools(this.config.tools), ...memTools, ...this.mcpTools()], def?.tools);
         if (depth < 2) tools = [...tools, task];
         const base = buildSystemPrompt({ cwd: this.cwd, tools, env: this.envBlock, subagent: true, mode: this.policy.mode === "plan" ? "plan" : "default" });
-        return { model, apiKey: apiKeyFor(model, this.auth), tools, systemPrompt: def ? `${base}\n\n# Your role: ${def.name}\n${def.body}` : base, hooks: { beforeToolCall: (c) => this.policy.decide(c) } };
+        return { model, apiKey: apiKeyFor(model, this.auth), tools, systemPrompt: def ? `${base}\n\n# Your role: ${def.name}\n${def.body}` : base, hooks: { beforeToolCall: (c) => this.gateTool(c, false) } };
       },
     });
     const all = [...coreTools(this.config.tools), task, ...memTools, ...this.mcpTools()];
@@ -197,23 +215,46 @@ export class AgentSession {
     });
   }
 
+  /** Shell hooks (main agent only), threat rules, guard modes, then the permission policy. */
+  private async gateTool(c: BeforeToolCall, shell: boolean): Promise<PermissionDecision> {
+    if (shell && this.hooks.has("PreToolUse")) {
+      const r = await this.hooks.run("PreToolUse", { session_id: this.session.id, tool_name: c.tool.name, tool_input: c.args }, c.tool.name);
+      if (r.block) return { action: "deny", reason: `Hook: ${r.block}` };
+    }
+    const hit = this.threat.check(c.tool.name, c.args);
+    if (hit?.action === "deny") {
+      this.telemetry?.denied(this.session.id, this.promptId || this.session.id, c.tool.name, hit.reason ?? "");
+      return hit;
+    }
+    if (hit?.action === "ask" && this.policy.mode !== "full") {
+      if (!this.policy.asker) return { action: "deny", reason: `${hit.reason} Needs approval and there is no interactive user. Re-run with --yes or choose another path.` };
+      let summary = c.tool.name;
+      try { summary = c.tool.summarize?.(c.args as never) ?? summary; } catch { /* keep the tool name */ }
+      const ans = await this.policy.asker({ tool: c.tool, args: c.args, summary, reason: hit.reason ?? "threat rule" });
+      if (ans === "deny") return { action: "deny", reason: "The user declined this action." };
+    }
+    const guard = this.guards.check(c.tool.name, c.args);
+    if (guard) return guard;
+    return this.policy.decide(c);
+  }
+
   private agentHooks(): AgentHooks {
     return {
       transformContext: (messages) => maskStale(messages),
       onMessage: (m) => { this.msgIds.push(this.session.appendMessage(m)); },
-      beforeToolCall: async (c) => {
-        if (this.hooks.has("PreToolUse")) {
-          const r = await this.hooks.run("PreToolUse", { session_id: this.session.id, tool_name: c.tool.name, tool_input: c.args }, c.tool.name);
-          if (r.block) return { action: "deny", reason: `Hook: ${r.block}` };
-        }
-        const guard = this.guards.check(c.tool.name, c.args);
-        if (guard) return guard;
-        return this.policy.decide(c);
-      },
+      beforeToolCall: (c) => this.gateTool(c, true),
       afterToolCall: async (c) => {
+        if (!c.result.isError) this.threat.observe(c.tool.name, c.args);
         if (this.hooks.has("PostToolUse")) await this.hooks.run("PostToolUse", { session_id: this.session.id, tool_name: c.tool.name, tool_input: c.args, tool_response: c.result.content.map((x) => (x.type === "text" ? x.text : "[image]")).join("").slice(0, 20000) }, c.tool.name);
         this.ruvnet?.afterTool(c.tool.name, c.args, !c.result.isError);
         this.verifyGate.onTool(c.tool.name, c.args, !!c.result.isError);
+        if (this.config.diagnostics !== "off" && !c.result.isError && (c.tool.name === "edit" || c.tool.name === "write")) {
+          const note = syntaxNote(this.cwd, String(c.args.path ?? ""));
+          if (note) {
+            const content = c.result.content.map((x) => x.type === "text" ? { ...x, text: `${x.text}\n\n[syntax] ${note}\nThe edit was saved. Fix the syntax error before continuing.` } : x);
+            return { ...c.result, content: content.length ? content : [{ type: "text" as const, text: `[syntax] ${note}` }] };
+          }
+        }
       },
       maybeCompact: async (messages, lastUsage) => {
         if (this.compacting) return;
@@ -262,11 +303,20 @@ export class AgentSession {
     if (!this.session.title) this.session.setMeta({ title: input.slice(0, 80), model: `${this.model.provider}/${this.model.id}` });
     if (this.toolsDirty) this.refreshTools();
     this.agent.state.set("turn", ++this.turn);
+    this.promptId = `${this.session.id}:${this.turn}`;
+    this.telemetry?.prompt(this.session.id, this.promptId, textIn);
     this.checkpoints?.snapshot(this.turn);
     this.verifyGate.reset();
     this.guards.resetTurn();
     const startIdx = this.agent.messages.length;
+    const costBefore = this.agent.usage.cost.total;
     await this.agent.prompt(parts);
+    const slice = this.agent.messages.slice(startIdx);
+    const receipt = sealReceipt(buildReceipt(slice, this.turn, this.agent.usage.cost.total - costBefore), this.lastReceipt?.hash ?? null);
+    this.lastReceipt = receipt;
+    this.session.appendCustom("receipt", receipt);
+    this.telemetry?.completed(this.session.id, this.promptId, receipt.verdict, receipt.hash, receipt.stopReason);
+    this.emit({ type: "notice", level: "info", text: formatReceipt(receipt).split("\n")[0]! });
     if (this.toolsDirty) this.refreshTools();
     if (this.memory && this.config.memory?.autoCapture !== false && !this.opts.minimal) {
       const turn = this.agent.messages.slice(startIdx);

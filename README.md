@@ -28,7 +28,7 @@ rcode was built after studying the best open agents in depth — [pi](https://gi
 | **Human + AI native** | Beautiful TUI · `rcode -p` headless · `--json` JSONL events · `--rpc` JSONL RPC with approvals · `rcode acp` (Agent Client Protocol for Zed, t3code, goose desktop…). |
 | **Browser & desktop** | `browser` tool drives a real Chrome via [agent-browser](https://github.com/vercel-labs/agent-browser) (accessibility-tree snapshots with `@refs`, screenshots, forms); `desktop` tool operates native apps via [agent-desktop](https://github.com/vercel-labs/agent-desktop). Per-action permissions (external domains ask once per domain; every desktop action asks unless full mode), secret-field refusal. `rcode setup` installs both. |
 | **Remote** | `rcode gateway` — talk to your agent from your phone: **Telegram, Slack (Socket Mode), Discord** and a token-protected mobile web UI. One-tap pairing (`rcode gateway link` prints a link + QR), owner vs. chat-only roles, ✅/♾/❌ approval buttons bound to their conversation, streaming replies, `/stop` `/new` `/mode` `/undo`, scheduled jobs from chat (`/every 30m …`, `/daily 09:00 …`), single instance, `rcode gateway install` as a launchd/systemd service. |
-| **Safety nets** | Git checkpoints before every prompt — `/undo` restores everything (even bash-made changes) without touching your index. A verified-done gate stops "it works!" without evidence. |
+| **Safety nets** | Git checkpoints before every prompt — `/undo` restores everything (even bash-made changes) without touching your index. A verified-done gate stops "it works!" without evidence. Threat rules block pipe-to-shell and secret-then-egress even in full mode. Every turn seals a hash-chained receipt (`/receipt`). |
 | **Sessions** | Append-only JSONL trees: resume, fork, rewind — branch position persisted. |
 | **RuvNet stack, pre-wired** | If [ruflo](https://github.com/ruvnet/ruflo) or [ruvnet-brain](https://github.com/stuinfla/ruvnet-brain) are installed, rcode auto-connects them: learning hooks, swarm & memory tools, and source-grounded RuvNet answers. |
 
@@ -46,6 +46,8 @@ rcode -y                       # full auto (catastrophic commands still refused)
 rcode -m ollama/qwen3-coder    # fully local
 rcode acp                      # serve the Agent Client Protocol over stdio
 rcode doctor                   # verify providers, tools, MCP, memory
+rcode eval evals/smoke.json    # deterministic suite, Wilson 95% confidence interval
+rcode handoff                  # markdown brief of the last session (files, commands, verdicts)
 rcode gateway                  # remote control: web UI + Telegram (rcode login telegram <bot-token>)
 rcode gateway link             # one-tap pairing link + QR for your phone
 rcode gateway pair ABC123      # approve a pairing code someone received
@@ -77,14 +79,17 @@ rcode gateway install          # run the gateway as a background service
 ```
 src/ai/          provider-neutral streaming (anthropic SDK, openai chat+responses, gemini, ollama native), model registry
 src/agent/       the agent loop: tool batching, gating, steering, compaction hooks
-src/tools/       read · edit · write · bash (+background jobs) · grep · glob · ls · todo · web_fetch · task
+src/tools/       read · edit · write · bash (+background jobs) · grep · glob · ls · todo · web_fetch · task · diagnostics
 src/session/     JSONL session trees + compaction
-src/core/        AgentSession — the single object every frontend drives
+src/core/        AgentSession — the single object every frontend drives; turn receipts and handoff briefs
 src/permissions/ policy + bash risk classifier
+src/guard/       threat rules + secret-then-egress correlation
+src/eval/        scripted suites, graders, Wilson intervals
+src/telemetry/   local Beacon-shaped JSONL (redacted)
 src/memory/      memory providers (flat, ruvector) + tools
 src/mcp/         MCP client manager
 src/integrations ruvnet (ruflo / ruvector / brain)
-src/modes/       print · rpc · acp
+src/modes/       print · rpc · acp · eval and handoff
 src/tui/         interactive terminal UI
 builtin/         shipped workflows, agents, skills
 ```

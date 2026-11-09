@@ -19,7 +19,7 @@ import { renderMarkdown } from "./markdown.ts";
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MODES: PermissionMode[] = ["ask", "auto-edit", "full", "plan"];
-const NOARG = new Set(["help", "undo", "plan", "new", "fork", "rewind", "cost", "context", "mcp", "tools", "skills", "agents", "commands", "export", "copy", "clear", "quit", "resume", "model", "thinking", "mode", "memory"]);
+const NOARG = new Set(["help", "undo", "plan", "new", "fork", "rewind", "cost", "context", "mcp", "tools", "skills", "agents", "commands", "export", "copy", "clear", "quit", "resume", "model", "thinking", "mode", "memory", "receipt"]);
 const THINK: ThinkingLevel[] = ["off", "low", "medium", "high", "xhigh", "max"];
 
 interface RunningTool { id: string; name: string; summary: string; started: number; tail?: string }
@@ -29,7 +29,7 @@ const BUILTINS: Array<[string, string]> = [
   ["help", "Show commands and keys"], ["model", "Switch model: /model <ref> (no arg lists)"], ["thinking", "Set reasoning: off|low|medium|high|xhigh|max"],
   ["mode", "Approval mode: ask|auto-edit|full|plan"], ["plan", "Toggle plan mode (read-only)"], ["guard", "Toggle guards: freeze-tests | no-skip | strict-tdd"], ["goal", "Set a goal the agent must reach before stopping"],
   ["compact", "Summarize older context: /compact [focus]"], ["new", "Start a fresh session"], ["resume", "Resume a recent session"], ["fork", "Fork this session into a new branch file"],
-  ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["context", "Where the context window goes (by section, tool, message type)"], ["mcp", "MCP server status"],
+  ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["receipt", "Hash-chained proof of the last turn"], ["context", "Where the context window goes (by section, tool, message type)"], ["mcp", "MCP server status"],
   ["memory", "Search memory: /memory <query>"], ["remember", "Save a memory: /remember <text>"], ["forget", "Delete a memory: /forget <id>"], ["promote", "Promote memories to AGENTS.md: /promote <id…>"], ["tools", "List available tools"], ["skills", "List skills"],
   ["agents", "List subagent types"], ["commands", "List slash commands"], ["export", "Export transcript to markdown"], ["copy", "Copy last answer to clipboard"], ["clear", "Clear screen"], ["quit", "Exit"],
 ];
@@ -291,6 +291,11 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
       case "context": {
         const { contextBreakdown, renderBreakdown } = await import("../context/breakdown.ts");
         say(renderBreakdown(contextBreakdown(session.agent.config.systemPrompt, session.agent.config.tools, session.messages, session.model.contextWindow), Math.min(50, cols() - 40)));
+        return true;
+      }
+      case "receipt": {
+        const { formatReceipt } = await import("../core/receipt.ts");
+        say(session.lastReceipt ? formatReceipt(session.lastReceipt) : a.gray("no receipt yet"));
         return true;
       }
       case "cost": {

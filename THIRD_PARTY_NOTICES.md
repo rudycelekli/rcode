@@ -68,6 +68,12 @@ Where a built-in file draws on a specific project, a credit line at the end of t
 
 ---
 
+## agent-beacon
+
+- Repository: https://github.com/Asymptote-Labs/agent-beacon
+- License: MIT
+- Used in: the local telemetry record's field names (`event.action`, `session.id`, `prompt.id`, `harness.name`, `gen_ai.tool.call.id`, `command.command`, `file.path`). rcode's threat rules are original; Beacon's rule corpus is not included.
+
 ## MIT License (applies to the MIT-licensed projects above)
 
 ```
