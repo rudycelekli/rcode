@@ -21,6 +21,8 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   fireworks: { api: "openai-chat", baseUrl: "https://api.fireworks.ai/inference/v1", envKeys: ["FIREWORKS_API_KEY"] },
   ollama: { api: "ollama", baseUrl: process.env.OLLAMA_HOST ? `${process.env.OLLAMA_HOST.replace(/\/$/, "")}/v1` : "http://localhost:11434/v1", envKeys: [] },
   faux: { api: "faux", baseUrl: "", envKeys: [] },
+  // Your Claude plan via the official `claude` CLI (thinking only; rcode runs the tools). No key here.
+  "claude-cli": { api: "claude-cli", baseUrl: "", envKeys: [] },
   lmstudio: { api: "openai-chat", baseUrl: "http://localhost:1234/v1", envKeys: [] },
 };
 
@@ -50,6 +52,11 @@ const CATALOG: Record<string, Spec[]> = {
   google: [
     ["gemini-2.5-pro", "Gemini 2.5 Pro", 1_048_576, 65_536, [1.25, 10, 0.31, 0], { reasoning: true }],
     ["gemini-2.5-flash", "Gemini 2.5 Flash", 1_048_576, 65_536, [0.3, 2.5, 0.075, 0], { reasoning: true }],
+  ],
+  "claude-cli": [
+    ["sonnet", "Claude Sonnet (your plan)", 200_000, 64_000, [0, 0, 0, 0], { reasoning: true }],
+    ["opus", "Claude Opus (your plan)", 200_000, 32_000, [0, 0, 0, 0], { reasoning: true }],
+    ["haiku", "Claude Haiku (your plan)", 200_000, 64_000, [0, 0, 0, 0], { reasoning: true }],
   ],
   deepseek: [["deepseek-chat", "DeepSeek V3", 128_000, 8_192, [0.27, 1.1, 0.07, 0]], ["deepseek-reasoner", "DeepSeek R1", 128_000, 32_768, [0.55, 2.19, 0.14, 0], { reasoning: true }]],
   xai: [["grok-4", "Grok 4", 256_000, 64_000, [3, 15, 0.75, 0], { reasoning: true }]],

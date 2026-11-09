@@ -92,7 +92,7 @@ export type StreamEvent =
   | { type: "done"; message: AssistantMessage }
   | { type: "error"; message: AssistantMessage };
 
-export type ApiId = "anthropic-messages" | "openai-chat" | "openai-responses" | "google-gemini" | "ollama" | "faux";
+export type ApiId = "anthropic-messages" | "openai-chat" | "openai-responses" | "google-gemini" | "ollama" | "claude-cli" | "faux";
 
 export interface Model {
   id: string;
