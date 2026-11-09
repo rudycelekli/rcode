@@ -35,6 +35,7 @@ Usage:
   rcode gateway                  Talk to rcode from your phone: Telegram + web UI (pair/install/uninstall)
   rcode eval <suite.json>        Run a deterministic eval suite (Wilson 95% CI)
   rcode handoff [file]           Print a resume brief (or write it when a path is given)
+  rcode queue [add|run|list]     Queue tasks and work through them unattended (survives crashes)
 
 Options:
   -m, --model <ref>              provider/model or alias (opus, sonnet, haiku, gpt5, gemini, ollama/qwen3-coder)
@@ -83,6 +84,10 @@ async function main() {
   ensureHome();
 
   const sub = positionals[0];
+  if (sub === "queue" && !values.print) {
+    const { runQueue } = await import("./modes/queue.ts");
+    return runQueue(positionals.slice(1), values, cwd);
+  }
   if (sub && (sub === "eval" || sub === "handoff") && !values.print) {
     const { runOffline } = await import("./modes/offline.ts");
     return runOffline(sub, positionals.slice(1), cwd);
