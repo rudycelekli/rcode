@@ -15,6 +15,7 @@ import { add, clearFinished, drain, load, type Job } from "../core/queue.ts";
 import { listSessions } from "../session/store.ts";
 import { runSessionJob } from "./queue.ts";
 import { GUEST_NOTE, runGuest, type GuestEngine } from "../center/guests.ts";
+import { runAcpGuest, splitCommand } from "../center/acp-guest.ts";
 
 type Sock = ServerWebSocket<{ id: string }>;
 
@@ -71,7 +72,8 @@ export async function startCenter(opts: CenterOptions) {
   const host = opts.host ?? "127.0.0.1";
   const file = opts.queueFile;
   const threads = new Map<string, AgentSession>();
-  const guests = new Map<string, { id: string; engine: GuestEngine; title: string; running: boolean; warned: boolean; stop?: () => void }>();
+  type Hosted = GuestEngine | "agent";
+  const guests = new Map<string, { id: string; engine: Hosted; title: string; command?: string; running: boolean; warned: boolean; stop?: () => void }>();
   const approvals = new Map<string, (d: "allow" | "allow-session" | "deny") => void>();
   const sockets = new Set<Sock>();
   let queueRunning = false;
@@ -108,11 +110,50 @@ export async function startCenter(opts: CenterOptions) {
     };
   }
 
-  function guestState(g: { id: string; engine: GuestEngine; title: string; running: boolean }) {
-    return { id: g.id, title: g.title, model: g.engine === "claude" ? "Claude plan" : "Codex plan", mode: "guest", plain: false, needsModel: false, running: g.running, cost: 0, receipt: null, guest: true, engine: g.engine };
+  function guestState(g: { id: string; engine: Hosted; title: string; command?: string; running: boolean }) {
+    const model = g.engine === "claude" ? "Claude plan" : g.engine === "codex" ? "Codex plan" : (g.command ?? "any agent");
+    return { id: g.id, title: g.title, model, mode: "guest", plain: false, needsModel: false, running: g.running, cost: 0, receipt: null, guest: true, engine: g.engine };
   }
 
-  const engineOf = (v: unknown): "rcode" | GuestEngine => (v === "claude" || v === "codex" ? v : "rcode");
+  const engineOf = (v: unknown): "rcode" | Hosted => (v === "claude" || v === "codex" || v === "agent" ? v : "rcode");
+
+  const AGENT_NOTE = "This agent uses its own tools and its own sign-in. You still approve what it asks. rcode's threat rules do not run inside it.";
+
+  async function acpTurn(argv: string[], text: string, existing?: string) {
+    let g = existing ? guests.get(existing) : undefined;
+    if (g?.running) { broadcast({ type: "evt", thread: g.id, evt: { type: "note", level: "warn", text: "Still working. Stop it before sending more." } }); return; }
+    if (!g || g.engine !== "agent") {
+      g = { id: randomBytes(4).toString("hex"), engine: "agent", title: text.slice(0, 80), command: argv.join(" "), running: false, warned: false };
+      guests.set(g.id, g);
+      broadcast({ type: "focus", id: g.id, messages: [] });
+    }
+    g.command = argv.join(" ");
+    if (g.title === "New thread") g.title = text.slice(0, 80);
+    if (!g.warned) { g.warned = true; broadcast({ type: "evt", thread: g.id, evt: { type: "note", level: "warn", text: AGENT_NOTE } }); }
+    broadcast({ type: "you", thread: g.id, text: text.slice(0, 4000) });
+    g.running = true;
+    broadcast({ type: "thread", thread: guestState(g) });
+    const ac = new AbortController();
+    g.stop = () => ac.abort();
+    const thread = g.id;
+    await runAcpGuest({
+      argv, cwd: opts.cwd, prompt: text, signal: ac.signal,
+      onEvent: (e) => {
+        if (e.type === "delta") broadcast({ type: "evt", thread, evt: { type: "delta", kind: "text", text: e.text } });
+        else if (e.type === "tool") broadcast({ type: "evt", thread, evt: e });
+        else if (e.error) broadcast({ type: "evt", thread, evt: { type: "note", level: "error", text: e.error } });
+      },
+      onApproval: (req) => new Promise((resolve) => {
+        const id = randomBytes(6).toString("hex");
+        approvals.set(id, resolve);
+        broadcast({ type: "approval", thread, id, title: req.title, reason: req.reason || "The agent wants to use its own tools." });
+      }),
+    });
+    g.running = false;
+    g.stop = undefined;
+    broadcast({ type: "evt", thread, evt: { type: "turn" } });
+    broadcast({ type: "thread", thread: guestState(g) });
+  }
 
   async function guestTurn(engine: GuestEngine, text: string, existing?: string) {
     let g = existing ? guests.get(existing) : undefined;
@@ -217,6 +258,13 @@ export async function startCenter(opts: CenterOptions) {
           if (m.type === "prompt" && typeof m.text === "string" && m.text.trim()) {
             const engine = engineOf(m.engine);
             const text = m.text.trim();
+            if (engine === "agent") {
+              const argv = splitCommand(String(m.command ?? ""));
+              if (!argv.length) { send(ws, { type: "note", text: "Type the agent command first. Example: grok acp", level: "warn" }); return; }
+              const same = m.thread && guests.get(String(m.thread))?.engine === "agent" ? String(m.thread) : undefined;
+              await acpTurn(argv, text, same);
+              return;
+            }
             if (engine !== "rcode") {
               const same = m.thread && guests.get(String(m.thread))?.engine === engine ? String(m.thread) : undefined;
               await guestTurn(engine, text, same);
@@ -287,7 +335,7 @@ header b{color:var(--acc);letter-spacing:.04em}#cwd{color:var(--mut);font:12px/1
 #log{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
 #dock{grid-column:1/3;display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)}
 textarea{flex:1;resize:none;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:10px;padding:10px;font:inherit;min-height:44px;max-height:30vh}
-button,select{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:5px 10px;cursor:pointer}
+button,select,header input{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:5px 10px}button,select{cursor:pointer}
 button.acc{background:var(--acc);color:#1a120c;border:0;font-weight:650}
 h3{margin:14px 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);font-weight:650}
 .item{padding:7px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}.item:hover{background:var(--card)}.item.on{border-color:var(--acc);background:var(--card)}
@@ -302,7 +350,7 @@ h3{margin:14px 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercas
 label{color:var(--mut);display:flex;gap:6px;align-items:center}
 @media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto}#side{border-right:0;border-bottom:1px solid var(--bd);max-height:34dvh}}
 </style></head><body>
-<header><b>RCODE</b><span>center</span><select id="engine" title="Who does the work"><option value="rcode">rcode</option><option value="claude">Claude plan</option><option value="codex">Codex plan</option></select><span id="cwd"></span></header>
+<header><b>RCODE</b><span>center</span><select id="engine" title="Who does the work"><option value="rcode">rcode</option><option value="claude">Claude plan</option><option value="codex">Codex plan</option><option value="agent">Any agent</option></select><input id="agentcmd" placeholder="grok acp" title="Command that speaks the Agent Client Protocol" style="display:none"><span id="cwd"></span></header>
 <nav id="side"></nav>
 <section id="main"><div id="bar"></div><div id="log"></div></section>
 <form id="dock"><textarea id="box" rows="1" placeholder="Ask, or queue it as a mission. Enter sends, Shift+Enter adds a line."></textarea><button class="acc" id="send">Send</button></form>
@@ -365,7 +413,8 @@ conn();
 box.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();document.getElementById("dock").requestSubmit()}});
 document.getElementById("dock").onsubmit=e=>{e.preventDefault();const v=box.value.trim();if(!v||!ws)return;box.value="";
   if(e.submitter&&e.submitter.id!=="send"){ws.send(JSON.stringify({type:"queue-add",text:v}));return}
-  ws.send(JSON.stringify({type:"prompt",thread:active,text:v,engine:document.getElementById("engine").value}))};
+  const eng=document.getElementById("engine").value;ws.send(JSON.stringify({type:"prompt",thread:active,text:v,engine:eng,command:document.getElementById("agentcmd").value}))};
+document.getElementById("engine").onchange=function(){document.getElementById("agentcmd").style.display=this.value==="agent"?"":"none"};
 const queueBtn=el("button",null,"Queue");queueBtn.type="button";queueBtn.onclick=()=>{const v=box.value.trim();if(!v)return;box.value="";ws.send(JSON.stringify({type:"queue-add",text:v}))};
 document.getElementById("dock").appendChild(queueBtn);
 </script></body></html>`;
