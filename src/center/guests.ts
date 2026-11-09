@@ -11,6 +11,7 @@ export type GuestEngine = "claude" | "codex";
 export type GuestEvent =
   | { type: "delta"; text: string }
   | { type: "tool"; name: string; summary: string; status: "run" | "ok" | "fail" }
+  | { type: "note"; text: string; key: string }
   | { type: "done"; text?: string; error?: string };
 
 export const GUEST_NOTE: Record<GuestEngine, string> = {
@@ -55,7 +56,23 @@ export function parseClaudeLine(line: string): GuestEvent[] {
     }
   }
   if (m.type === "result") out.push(m.is_error ? { type: "done", error: friendly("claude", String(m.result ?? "")) } : { type: "done", text: String(m.result ?? "") });
+  const novel = claudeNovel(m);
+  if (novel && !out.length) out.push(novel);
   return out;
+}
+
+const CLAUDE_QUIET = new Set(["system", "rate_limit_event", "assistant", "user", "result"]);
+const CLAUDE_DELTA_QUIET = new Set(["text_delta", "content_block_start", "content_block_stop", "message_start", "message_delta", "message_stop", "ping"]);
+
+/** A Claude event we do not render yet. Shown once per kind so a new protocol message is visible the day they ship it. */
+function claudeNovel(m: any): GuestEvent | undefined {
+  if (m.type === "stream_event") {
+    const kind = String(m.event?.delta?.type ?? m.event?.type ?? "");
+    if (!kind || CLAUDE_DELTA_QUIET.has(kind)) return;
+    return { type: "note", key: `claude:${kind}`, text: `Claude sent a new event (${kind}).` };
+  }
+  if (!m.type || CLAUDE_QUIET.has(m.type)) return;
+  return { type: "note", key: `claude:${m.type}`, text: `Claude sent a new event (${String(m.type).slice(0, 60)}).` };
 }
 
 export function parseCodexLine(line: string): GuestEvent[] {
@@ -66,6 +83,13 @@ export function parseCodexLine(line: string): GuestEvent[] {
   if (m.type === "item.completed" && item.type === "agent_message" && item.text) return [{ type: "delta", text: String(item.text) }];
   if (m.type === "turn.completed") return [{ type: "done" }];
   if (m.type === "error") return [{ type: "done", error: friendly("codex", String(m.message ?? m.error ?? "")) }];
+  const kind = String(item.type ?? "");
+  if ((m.type === "item.started" || m.type === "item.completed") && kind && kind !== "command_execution" && kind !== "agent_message") {
+    return [{ type: "note", key: `codex:${kind}`, text: `Codex sent a new ${kind.slice(0, 60)}.` }];
+  }
+  if (m.type && !["thread.started", "turn.started", "item.started", "item.completed"].includes(m.type)) {
+    return [{ type: "note", key: `codex:${m.type}`, text: `Codex sent a new event (${String(m.type).slice(0, 60)}).` }];
+  }
   return [];
 }
 
@@ -86,7 +110,12 @@ export function runGuest(o: { engine: GuestEngine; prompt: string; cwd: string; 
     const kill = () => { try { child.kill("SIGTERM"); } catch {} };
     o.signal?.addEventListener("abort", kill, { once: true });
     let buf = "", err = "", sawDone = false;
-    const emit = (e: GuestEvent) => { if (e.type === "done") sawDone = true; o.onEvent(e); };
+    const noted = new Set<string>();
+    const emit = (e: GuestEvent) => {
+      if (e.type === "note") { if (noted.has(e.key)) return; noted.add(e.key); }
+      if (e.type === "done") sawDone = true;
+      o.onEvent(e);
+    };
     const out = child.stdout, errPipe = child.stderr, input = child.stdin;
     if (!out || !errPipe || !input) { emit({ type: "done", error: "could not start the guest" }); resolve(); return; }
     out.on("data", (d) => {

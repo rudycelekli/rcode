@@ -49,6 +49,8 @@ export function runAcpGuest(o: {
       o.signal?.addEventListener("abort", stop, { once: true });
       write({ jsonrpc: "2.0", id, method, params });
     });
+    const noted = new Set<string>();
+    const emit = (e: GuestEvent) => { if (e.type === "note" && noted.has(e.key)) return; if (e.type === "note") noted.add(e.key); o.onEvent(e); };
     const kill = () => { try { child.kill("SIGTERM"); } catch {} };
     o.signal?.addEventListener("abort", kill, { once: true });
 
@@ -56,13 +58,10 @@ export function runAcpGuest(o: {
       let msg: any; try { msg = JSON.parse(line); } catch { return; }
       if (msg.method === undefined && msg.id !== undefined) { pending.get(msg.id)?.(msg.result ?? msg.error ?? null); pending.delete(msg.id); return; }
       if (msg.method === "session/update") {
-        const u = msg.params?.update ?? {};
-        const text = u.content?.text ?? u.content?.content?.text ?? "";
-        if (u.sessionUpdate === "agent_message_chunk" && text) o.onEvent({ type: "delta", text });
-        if (u.sessionUpdate === "tool_call") o.onEvent({ type: "tool", name: String(u.title ?? u.kind ?? "tool"), summary: "", status: "run" });
-        if (u.sessionUpdate === "tool_call_update") o.onEvent({ type: "tool", name: String(u.title ?? "tool"), summary: "", status: u.status === "failed" ? "fail" : "ok" });
+        for (const e of acpEvents(msg.params?.update)) emit(e);
         return;
       }
+      if (typeof msg.method === "string" && msg.method !== "session/request_permission") emit({ type: "note", key: `acp:${msg.method}`, text: `This agent sent a new message (${msg.method.slice(0, 60)}).` });
       if (msg.method === "session/request_permission" && msg.id !== undefined) {
         const tool = msg.params?.toolCall ?? {};
         const decision = await o.onApproval({ id: String(msg.id), title: String(tool.title ?? "Permission"), reason: "", options: msg.params?.options ?? [] }).catch(() => "deny" as const);
@@ -97,4 +96,19 @@ export function runAcpGuest(o: {
       } catch (e) { finish({ type: "done", error: (e as Error).message }); kill(); }
     })();
   });
+}
+
+const ACP_KNOWN = new Set(["agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update"]);
+
+/** One ACP session update, as center events. An update kind we have not met is shown once. */
+export function acpEvents(update: any): GuestEvent[] {
+  const u = update ?? {};
+  const text = String(u.content?.text ?? u.content?.content?.text ?? "");
+  if ((u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "agent_thought_chunk") && text) return [{ type: "delta", text }];
+  if (u.sessionUpdate === "tool_call") return [{ type: "tool", name: String(u.title ?? u.kind ?? "tool"), summary: "", status: "run" }];
+  if (u.sessionUpdate === "tool_call_update") return [{ type: "tool", name: String(u.title ?? "tool"), summary: "", status: u.status === "failed" ? "fail" : "ok" }];
+  if (typeof u.sessionUpdate === "string" && !ACP_KNOWN.has(u.sessionUpdate)) {
+    return [{ type: "note", key: `acp:${u.sessionUpdate}`, text: `This agent sent a new update (${u.sessionUpdate.slice(0, 60)}).` }];
+  }
+  return [];
 }

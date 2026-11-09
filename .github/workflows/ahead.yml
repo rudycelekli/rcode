@@ -1,0 +1,34 @@
+name: ahead
+on:
+  schedule:
+    - cron: "17 14 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.2.22 }
+      - run: bun install --frozen-lockfile
+      - run: bun src/cli.ts ahead --json > ahead.json
+      - name: Open an issue when a tool shipped past the reviewed version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bun -e '
+          const gaps = await Bun.file("ahead.json").json();
+          const shipped = gaps.filter((g) => g.status === "shipped");
+          if (!shipped.length) { console.log("Nothing new."); process.exit(0); }
+          const title = "Upstream shipped: " + shipped.map((g) => g.id + " " + g.tag).join(", ");
+          const listed = Bun.spawnSync(["gh", "issue", "list", "--label", "upstream", "--state", "open", "--json", "title", "--limit", "30"], { stdout: "pipe" });
+          const open = JSON.parse(listed.stdout.toString() || "[]");
+          if (open.some((i) => i.title === title)) { console.log("Already open."); process.exit(0); }
+          Bun.spawnSync(["gh", "label", "create", "upstream", "--color", "1F6FEB", "--description", "A tool rcode rides has shipped"], { stdout: "inherit", stderr: "inherit" });
+          const body = shipped.map((g) => "- **" + g.id + "** " + g.tag + " (" + g.ride + ")\\n  " + g.detail + (g.url ? "\\n  " + g.url : "")).join("\\n") + "\\n\\nBump seen in src/ahead/ledger.ts after reviewing it, then stay ahead of what they added.";
+          const made = Bun.spawnSync(["gh", "issue", "create", "--label", "upstream", "--title", title, "--body", body], { stdout: "inherit", stderr: "inherit" });
+          process.exit(made.exitCode ?? 1);
+          '

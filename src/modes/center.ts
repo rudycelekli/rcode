@@ -168,6 +168,7 @@ export async function startCenter(opts: CenterOptions) {
       onEvent: (e) => {
         if (e.type === "delta") broadcast({ type: "evt", thread, evt: { type: "delta", kind: "text", text: e.text } });
         else if (e.type === "tool") broadcast({ type: "evt", thread, evt: e });
+        else if (e.type === "note") broadcast({ type: "evt", thread, evt: { type: "note", level: "info", text: e.text } });
         else if (e.error) broadcast({ type: "evt", thread, evt: { type: "note", level: "error", text: e.error } });
       },
       onApproval: (req) => new Promise((resolve) => {
@@ -202,6 +203,7 @@ export async function startCenter(opts: CenterOptions) {
       onEvent: (e) => {
         if (e.type === "delta") broadcast({ type: "evt", thread: g!.id, evt: { type: "delta", kind: "text", text: e.text } });
         else if (e.type === "tool") broadcast({ type: "evt", thread: g!.id, evt: e });
+        else if (e.type === "note") broadcast({ type: "evt", thread: g!.id, evt: { type: "note", level: "info", text: e.text } });
         else if (e.error) broadcast({ type: "evt", thread: g!.id, evt: { type: "note", level: "error", text: e.error } });
       },
     });

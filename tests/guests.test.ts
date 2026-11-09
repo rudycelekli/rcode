@@ -23,6 +23,8 @@ describe("guest engines", () => {
     expect(tool[0]).toMatchObject({ type: "tool", name: "Bash", status: "run" });
     expect(parseClaudeLine('{"type":"result","is_error":true,"result":"OAuth access token has expired"}')[0]).toMatchObject({ type: "done", error: expect.stringContaining("/login") });
     expect(parseClaudeLine("not json")).toEqual([]);
+    expect(parseClaudeLine('{"type":"stream_event","event":{"type":"content_block_stop"}}')).toEqual([]);
+    expect(parseClaudeLine('{"type":"widget_event","widget":"chart"}')[0]).toMatchObject({ type: "note", key: "claude:widget_event" });
   });
 
   test("codex stream lines become commands and the reply", () => {
@@ -31,6 +33,8 @@ describe("guest engines", () => {
     expect(parseCodexLine('{"type":"item.completed","item":{"type":"agent_message","text":"done"}}')).toEqual([{ type: "delta", text: "done" }]);
     expect(parseCodexLine('{"type":"turn.completed"}')).toEqual([{ type: "done" }]);
     expect(parseCodexLine('{"type":"error","message":"not logged in"}')[0]).toMatchObject({ error: expect.stringContaining("codex login") });
+    expect(parseCodexLine('{"type":"item.completed","item":{"type":"image_view"}}')[0]).toMatchObject({ type: "note", key: "codex:image_view" });
+    expect(parseCodexLine('{"type":"thread.started"}')).toEqual([]);
   });
 
   test("a guest turn streams into the center and warns that rcode is not checking it", async () => {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { splitCommand } from "../src/center/acp-guest.ts";
+import { acpEvents, splitCommand } from "../src/center/acp-guest.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "rcode-acp-"));
 
@@ -11,6 +11,12 @@ describe("any ACP agent", () => {
     expect(splitCommand('grok acp')).toEqual(["grok", "acp"]);
     expect(splitCommand('  "my agent" --flag "a b" ')).toEqual(["my agent", "--flag", "a b"]);
     expect(splitCommand("")).toEqual([]);
+  });
+
+  test("a new protocol update is shown, and thinking still streams as text", () => {
+    expect(acpEvents({ sessionUpdate: "agent_thought_chunk", content: { text: "hmm" } })).toEqual([{ type: "delta", text: "hmm" }]);
+    expect(acpEvents({ sessionUpdate: "plan" })[0]).toMatchObject({ type: "note", key: "acp:plan" });
+    expect(acpEvents({ sessionUpdate: "tool_call", title: "bash" })[0]).toMatchObject({ type: "tool", status: "run" });
   });
 
   test("a turn streams text, and a tool ask is approved from the center", async () => {

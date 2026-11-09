@@ -35,6 +35,7 @@ Usage:
   rcode update                   Update to the latest release (compiled binary)
   rcode gateway                  Talk to rcode from your phone: Telegram + web UI (pair/install/uninstall)
   rcode center [--lan] [--share] [--token <key>]  Local command center. The link stays the same between launches. --lan is your network. --share is a cloudflared link off it
+  rcode ahead [--json]           See if Claude Code, Codex, T3 Code, or the agent protocol shipped past the version we reviewed
   rcode app                      Install a double-clickable Rcode app that opens the center
   rcode eval <suite.json>        Run a deterministic eval suite (Wilson 95% CI)
   rcode handoff [file]           Print a resume brief (or write it when a path is given)
@@ -89,6 +90,10 @@ async function main() {
   ensureHome();
 
   const sub = positionals[0];
+  if (sub === "ahead" && !values.print) {
+    const { runAhead } = await import("./ahead/check.ts");
+    return runAhead({ json: !!values.json });
+  }
   if (sub === "center" && !values.print) {
     const { runCenter } = await import("./modes/center.ts");
     return runCenter({ cwd, port: values.port ? Number(values.port) : undefined, host: (values.host as string | undefined) ?? (values.lan ? "0.0.0.0" : undefined), share: !!values.share, token: values.token as string | undefined, model: values.model as string | undefined });
