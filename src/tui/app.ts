@@ -67,7 +67,7 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
     const pct = Math.min(100, Math.round((ctx / m.contextWindow) * 100));
     const u = session.agent.usage;
     const modeColor = session.mode === "plan" ? a.cyan : session.mode === "full" ? a.red : session.mode === "auto-edit" ? a.yellow : a.green;
-    const left = `${a.accent("rcode")} ${a.gray("·")} ${m.id} ${a.gray(session.thinking)} ${a.gray("·")} ${modeColor(session.mode)}${session.goal ? a.gray(" · ") + a.magenta("goal") : ""}${session.guards.list().length ? a.gray(" · ") + a.cyan("guard:" + session.guards.list().join("+")) : ""}${session.sandboxStatus !== "off" ? a.gray(" · sandboxed") : ""}`;
+    const left = `${a.accent("rcode")} ${a.gray("·")} ${m.id} ${a.gray(session.thinking)} ${a.gray("·")} ${modeColor(session.mode)}${session.goal ? a.gray(" · ") + a.magenta("goal") : ""}${session.guards.list().length ? a.gray(" · ") + a.cyan("guard:" + session.guards.list().join("+")) : ""}${session.sandboxStatus !== "off" ? a.gray(" · sandboxed") : ""}${session.stackMark ? a.gray(" · ") + a.magenta(session.stackMark) : ""}`;
     const right = a.gray(`ctx ${pct}% · $${u.cost.total.toFixed(3)} · ${basename(session.cwd)}`);
     const gap = Math.max(1, cols() - width(left) - width(right));
     return left + " ".repeat(gap) + right;

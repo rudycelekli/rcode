@@ -29,6 +29,8 @@ import { Checkpoints } from "./checkpoints.ts";
 import { sandboxBackend } from "../tools/sandbox.ts";
 import { Guards } from "./guards.ts";
 import { RuvnetIntegration } from "../integrations/ruvnet.ts";
+import { armStackSession, stackPrelude } from "../integrations/prelude.ts";
+import { resolveEmbeddings } from "../memory/choose.ts";
 import { ThreatGuard } from "../guard/rules.ts";
 import { buildReceipt, formatReceipt, sealReceipt, type TurnReceipt } from "./receipt.ts";
 import { syntaxNote } from "../tools/diagnostics.ts";
@@ -119,7 +121,7 @@ export class AgentSession {
 
     if (!o.minimal) {
       if (this.config.memory?.enabled !== false && this.config.memory?.provider !== "off") {
-        getMemory((this.config.memory?.provider as any) ?? "auto", this.config.memory?.embeddings ?? "hash").then(async (m) => {
+        getMemory((this.config.memory?.provider as any) ?? "auto", resolveEmbeddings(this.config.memory?.embeddings)).then(async (m) => {
           this.memory = m;
           // Session-start memory is computed once so the system prompt stays cache-stable for the session.
           this.memoryBlock = await sessionMemoryBlock(m, this.cwd).catch(() => undefined);
@@ -133,6 +135,7 @@ export class AgentSession {
         this.mcp = new McpManager(servers, o.cwd);
         this.mcp.onChange(() => this.refreshTools());
         this.ruvnet.attach(this.mcp);
+        armStackSession(this.mcp, this.session.id, o.cwd);
         void this.mcp.connectAll();
       }
     }
@@ -174,7 +177,7 @@ export class AgentSession {
 
   /** All tools available to the main agent. */
   private buildTools(): Tool[] {
-    const memTools = this.opts.minimal || this.config.memory?.enabled === false ? [] : createMemoryTools(() => getMemory((this.config.memory?.provider as any) ?? "auto", this.config.memory?.embeddings ?? "hash"), this.cwd);
+    const memTools = this.opts.minimal || this.config.memory?.enabled === false ? [] : createMemoryTools(() => getMemory((this.config.memory?.provider as any) ?? "auto", resolveEmbeddings(this.config.memory?.embeddings)), this.cwd);
     const task = createTaskTool({
       agents: () => this.agentDefs,
       maxDepth: 2,
@@ -296,8 +299,9 @@ export class AgentSession {
     // Don't repeat memories already present in the session-start block.
     if (mem && this.memoryBlock) mem = mem.split("\n").filter((l) => !this.memoryBlock!.includes(l.replace(/^- /, ""))).join("\n") || undefined;
     const ruv = await this.ruvnet?.beforePrompt(input).catch(() => undefined);
+    const stack = await stackPrelude(this.mcp, input, this.cwd).catch(() => undefined);
     const goalBlock = this.goal ? `<active_goal>\n${this.goal}\nKeep working until this goal is met or you are genuinely blocked.\n</active_goal>` : undefined;
-    const ctxBlocks = [mem && `<relevant_memories>\n${mem}\n</relevant_memories>`, ruv, goalBlock].filter(Boolean);
+    const ctxBlocks = [mem && `<relevant_memories>\n${mem}\n</relevant_memories>`, stack, ruv, goalBlock].filter(Boolean);
     parts.push({ type: "text", text: ctxBlocks.length ? `${ctxBlocks.join("\n")}\n\n${textIn}` : textIn });
     parts.push(...images);
     if (!this.session.title) this.session.setMeta({ title: input.slice(0, 80), model: `${this.model.provider}/${this.model.id}` });
@@ -355,6 +359,12 @@ export class AgentSession {
     this.policy.sandboxed = on;
   }
   get sandboxStatus() { const p = this.agent.state.get("sandbox") as any; return p?.enabled ? `${sandboxBackend()}${p.network ? "" : ", no network"}` : "off"; }
+  /** "stack" when a local learning server or knowledge server is configured. */
+  get stackMark(): string {
+    const s = this.ruvnet?.status();
+    if (!s) return "";
+    return Object.values(s).some((v) => v !== "not installed") ? "stack" : "";
+  }
   setGoal(goal?: string) { this.goal = goal; }
 
   /** Revert file changes made by edit/write during the most recent turn that changed files. */

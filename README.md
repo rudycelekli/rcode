@@ -30,7 +30,7 @@ rcode was built after studying the best open agents in depth — [pi](https://gi
 | **Remote** | `rcode gateway` — talk to your agent from your phone: **Telegram, Slack (Socket Mode), Discord** and a token-protected mobile web UI. One-tap pairing (`rcode gateway link` prints a link + QR), owner vs. chat-only roles, ✅/♾/❌ approval buttons bound to their conversation, streaming replies, `/stop` `/new` `/mode` `/undo`, scheduled jobs from chat (`/every 30m …`, `/daily 09:00 …`), single instance, `rcode gateway install` as a launchd/systemd service. |
 | **Safety nets** | Git checkpoints before every prompt — `/undo` restores everything (even bash-made changes) without touching your index. A verified-done gate stops "it works!" without evidence. Threat rules block pipe-to-shell and secret-then-egress even in full mode. Every turn seals a hash-chained receipt (`/receipt`). |
 | **Sessions** | Append-only JSONL trees: resume, fork, rewind — branch position persisted. |
-| **RuvNet stack, pre-wired** | If [ruflo](https://github.com/ruvnet/ruflo) or [ruvnet-brain](https://github.com/stuinfla/ruvnet-brain) are installed, rcode auto-connects them: learning hooks, swarm & memory tools, and source-grounded RuvNet answers. |
+| **RuvNet stack, pre-wired** | If [ruflo](https://github.com/ruvnet/ruflo) or [ruvnet-brain](https://github.com/stuinfla/ruvnet-brain) are installed, rcode auto-connects them. Every prompt gets a short route and the patterns that worked before (1.2s cap, dropped if the server is slow). Questions about the stack also get source excerpts. On-device MiniLM embeddings turn on by themselves once the model is cached. The status line shows `stack`. |
 
 ## Usage
 

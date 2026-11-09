@@ -9,6 +9,8 @@ import { buildReceipt, deriveReceipts, sealReceipt, verifyChain } from "../src/c
 import { renderHandoff } from "../src/core/handoff.ts";
 import { formatReport, loadSuite, runSuite, wilson } from "../src/eval/run.ts";
 import { ThreatGuard, auditRules, isEgress, isSecretPath, touchesSecret } from "../src/guard/rules.ts";
+import { formatStackHint, routeLine } from "../src/integrations/prelude.ts";
+import { resolveEmbeddings } from "../src/memory/choose.ts";
 import { Telemetry } from "../src/telemetry/beacon.ts";
 import { redact } from "../src/telemetry/redact.ts";
 import { syntaxNote } from "../src/tools/diagnostics.ts";
@@ -151,6 +153,23 @@ describe("diagnostics and telemetry", () => {
     expect(JSON.stringify(rows)).not.toContain("sk-abcdefghijklmnopqrst");
     expect(rows.some((r: any) => r["event.action"] === "command.executed")).toBe(true);
     expect(rows.at(-1)["rcode.verdict"]).toBe("read-only");
+  });
+});
+
+describe("default stack", () => {
+  test("route lines and the hint block stay short", () => {
+    expect(routeLine(JSON.stringify({ primaryAgent: { type: "coder", reason: "small edit" } }))).toBe("coder — small edit");
+    expect(routeLine("not json\njust a line")).toBe("not json");
+    const block = formatStackHint({ route: "coder — small edit", patterns: "prefer the project test runner" });
+    expect(block).toContain("<stack");
+    expect(block).toContain("What worked before");
+    expect(formatStackHint({})).toBeUndefined();
+  });
+  test("embeddings stay hashed until a model is cached, and an explicit choice wins", () => {
+    expect(resolveEmbeddings(undefined, false)).toBe("hash");
+    expect(resolveEmbeddings("auto", true)).toBe("onnx");
+    expect(resolveEmbeddings("onnx", false)).toBe("onnx");
+    expect(resolveEmbeddings("hash", true)).toBe("hash");
   });
 });
 
