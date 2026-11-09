@@ -1,26 +1,36 @@
 # rcode
 
-**The open, fast, extensible coding agent.** Terminal-first, any model, MCP-native, with built-in long-term memory, parallel subagents, a real permission system, and a library of world-class workflows (`/plan`, `/tdd`, `/review`, `/ddd`, `/adr`, `/security`, …) — all working the moment you install it.
+![rcode: a coding agent for the terminal and a command center, on your Claude or Codex plan, with a receipt every turn](docs/brand/hero.svg)
 
-> Status: **early alpha** — moving fast, in the open. Issues and PRs welcome.
+**The coding agent you can hand to anyone.**
+
+Talk to it in the terminal. Or open a command center on your computer, skin it the way you like, and put it on your phone. Bring an API key, a local model, or the Claude and Codex plans you already pay for. No new account.
+
+Every rcode turn ends with a receipt. Undo puts the files back. You approve what matters.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rudycelekli/rcode/main/install.sh | sh   # prebuilt binary (macOS/Linux)
-# or from source: bun install -g github:rudycelekli/rcode
-rcode setup                               # 60-second wizard: model, approval mode, RuvNet stack
-rcode                                     # start working
+curl -fsSL https://raw.githubusercontent.com/rudycelekli/rcode/main/install.sh | sh
+rcode
 ```
+
+Works on macOS and Linux. MIT. Early, and shipping in the open.
+
+| Start here | What happens |
+|---|---|
+| `rcode` | A session in the terminal. Plain mode speaks everyday words. |
+| `rcode center` | The command center. `rcode app` installs it and opens it. |
+| Claude plan, Codex plan, any agent | Pick who does the work. Their tools, your thread. |
 
 ## Why rcode
 
-rcode was built after studying the best open agents in depth — [pi](https://github.com/earendil-works/pi), [oh-my-pi](https://github.com/can1357/oh-my-pi), [jcode](https://github.com/1jehuang/jcode), [goose](https://github.com/aaif-goose/goose), [t3code](https://github.com/pingdotgg/t3code) and more (see [`docs/research/`](docs/research)) — taking what each does best and filling the gaps none of them cover.
+rcode was built after studying the best open agents in depth — [pi](https://github.com/earendil-works/pi), [oh-my-pi](https://github.com/can1357/oh-my-pi), [jcode](https://github.com/1jehuang/jcode), [goose](https://github.com/aaif-goose/goose), [t3code](https://github.com/pingdotgg/t3code) and more (see [`docs/research/`](docs/research)) — taking what each does best and filling the gaps none of them cover. The workflows (`/plan`, `/tdd`, `/review`, `/security`, and the rest) are ready the moment you install it.
 
 | | rcode |
 |---|---|
 | **Starts with zero setup** | No config needed: rcode uses your keys if you have them, otherwise the best coding model already installed in Ollama or LM Studio. With nothing at all, it explains your two options in plain words. Paste any API key straight into the chat: rcode recognizes the provider, saves the key on your computer, and never sends it to a model. A new session suggests three first prompts that fit the folder; type 1, 2 or 3. |
 | **Grows by talking** | `/hire a reviewer who checks accessibility` designs a persistent teammate the agent can delegate to. `/teach release` turns what you just did into a reusable `/release` workflow. Both are plain markdown you can edit. |
 | **Plain mode** | `rcode --plain` or `/plain` in chat: everyday words, a one-sentence meaning for any technical term, a yes before anything is overwritten, and a three-bullet "what changed" after every edit. |
-| **Command center** | `rcode center` is the local host. `rcode center --lan` opens it on your network. `rcode center --share`, or Share on the page, opens a cloudflared link for a device that is not on your network. Cloudflare carries that link. `rcode app` installs a double-clickable app that starts the center and opens it. The link keeps the same key between launches, so a bookmark and a phone home screen keep working. `--token` sets a key for one run. Look for phones lists Xcode simulators, starts one you pick, and shows a live picture you can tap. Android taps go through adb. iOS taps go through idb when it is installed. The simctl and adb commands follow T3 Code (MIT). Their account and their desktop shell were not copied. Threads, a crash-safe mission queue, live tools, approvals, and a receipt after every rcode turn. The same page installs to a phone home screen, dictates in the browser (the audio never reaches rcode), attaches and quotes, draws an HTML answer in a sandbox that cannot reach the network, shows the turn's diff next to its verdict, undoes it, makes a second checkout, and opens a GitHub pull request. It lists a simulator or phone that is already on and takes a screenshot only when you ask. Plan totals come from rcode's receipts plus Claude Code's local stats and a count of Codex threads. Login files are never read. The engine menu runs **Claude plan**, **Codex plan**, or **any agent** that speaks the Agent Client Protocol (`grok acp`, and the rest). A guest uses its own tools. Claude and Codex are outside rcode's checks. Any other agent still asks you before it acts. Phone chat stays `rcode gateway`. **Skin** reskins the page the way Winamp did. It has eight presets: Ember, Llama (the classic player look, with bevels and a green readout), Paper, Synthwave, Amber CRT, Phosphor, Fjord, and Contrast. You can also set accent, text size, roundness, spacing, font, and an effect (bevel, scanlines, glow), or press Surprise me for a fresh palette. Copy a skin and send it to a friend. A pasted skin can only set colors and numbers, so it cannot carry code. `?skin=llama` in the link picks one. |
+| **Command center** | `rcode center` opens a page on this computer. `rcode app` installs a double-click launcher that opens it for you, and the link keeps the same key, so a bookmark and a phone home screen keep working. `--lan` is your network. Share, or `--share`, is a cloudflared link for a device that is not. The page runs threads, a crash-safe mission queue, live tools, approvals, and a receipt after every rcode turn. It dictates in the browser (the audio never reaches rcode), attaches and quotes, draws an HTML answer in a sandbox, shows the turn's diff, undoes it, copies the repo, and opens a GitHub pull request. **Skin** reskins the page: Ember, Llama, Paper, Synthwave, Amber CRT, Phosphor, Fjord, and Contrast, plus your own accent, type, and effects. A pasted skin can only set colors and numbers. The engine menu runs **Claude plan**, **Codex plan**, or **any agent** (`grok acp` and the rest). A guest uses its own tools. Claude and Codex sit outside rcode's checks. Any other agent still asks you first. Look for phones lists a simulator, starts one, and lets you watch and tap it. Plan totals come from receipts plus local Claude stats and a count of Codex threads. Login files are never read. Phone chat stays `rcode gateway`. |
 | **Stays current** | `rcode ahead` checks the latest public release of Claude Code, Codex, the Agent Client Protocol, and T3 Code against the version rcode has already reviewed. Claude plan and Codex plan run those CLIs, so a new model or tool they ship is used on the next turn, with no rcode release. A protocol message rcode has not met yet is shown in the thread instead of dropped. A weekly check opens a GitHub issue when one of them ships past the reviewed version. |
 | **Walk away** | `rcode queue add "update the docs"` queues work for a folder. `rcode queue run` finishes it unattended. Jobs survive crashes and Ctrl+C: a job that was interrupted resumes on the next run, and one that keeps crashing is stopped after three tries. |
 | **Your Claude plan, no API key** | `rcode -m claude-cli/sonnet` (or `opus`, `haiku`) thinks through the official `claude` CLI, signed in with your own Claude account. rcode runs the tools, so permissions, guards and receipts still apply. rcode never reads your Claude credentials; sign in with `claude` then `/login`. Each turn resends the conversation, so long sessions use more of your plan's limits. |
