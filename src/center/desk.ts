@@ -5,8 +5,24 @@
  * Their Effect wrapper, relay account, and desktop shell are not included.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+
+/**
+ * A double-clicked app starts with the system's bare PATH, so `claude` and `codex` installed
+ * by npm, nvm, Homebrew, or their own installers would look missing. Append the usual homes.
+ */
+export function widenPath(path = process.env.PATH ?? "", home = homedir()): string {
+  const out = path.split(":").filter(Boolean);
+  const extra = [join(home, ".local", "bin"), join(home, ".claude", "local"), join(home, ".bun", "bin"), join(home, ".npm-global", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+  try {
+    const nvm = join(home, ".nvm", "versions", "node");
+    for (const v of readdirSync(nvm).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))) extra.push(join(nvm, v, "bin"));
+  } catch { /* no nvm */ }
+  for (const d of extra) if (!out.includes(d) && existsSync(d)) out.push(d);
+  return out.join(":");
+}
 
 export function tunnelUrl(text: string): string | undefined {
   return text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/)?.[0];

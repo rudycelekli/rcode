@@ -20,10 +20,21 @@ import { runSessionJob } from "./queue.ts";
 import { GUEST_NOTE, runGuest, type GuestEngine } from "../center/guests.ts";
 import { runAcpGuest, splitCommand } from "../center/acp-guest.ts";
 import { addWorktree, claudePlanUsage, codexThreadCount, deviceShot, githubPullRequest, lanHosts, listDevices, saveSpill, spillPaste, turnDiff } from "../center/studio.ts";
-import { deviceArgv, startShare } from "../center/desk.ts";
+import { deviceArgv, startShare, widenPath } from "../center/desk.ts";
 import { loadCenterToken } from "../center/token.ts";
-import { SKIN_CSS, skinScript } from "../center/skins.ts";
+import { centerPage } from "../center/page.ts";
 import { spawnSync } from "node:child_process";
+import { basename } from "node:path";
+
+const PAGE = centerPage();
+const MODES = ["ask", "auto-edit", "full", "plan"];
+
+function branchOf(cwd: string): string {
+  const r = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd, encoding: "utf8", timeout: 2000 });
+  return r.status === 0 ? r.stdout.trim() : "";
+}
+
+const engines = () => ({ claude: !!Bun.which("claude"), codex: !!Bun.which("codex") });
 
 function composePrompt(text: string, file?: { name?: string; text?: string }): string {
   const spill = spillPaste(text);
@@ -68,7 +79,7 @@ function textOf(content: any[]): string {
 }
 
 function transcript(s: AgentSession) {
-  const out: { role: string; text: string }[] = [];
+  const out: { role: string; text: string; tools?: string[] }[] = [];
   for (const m of s.messages.slice(-40)) {
     if (m.role === "user") {
       const t = textOf(m.content).replace(/<(relevant_memories|stack|active_goal|hook_context)[\s\S]*?<\/\1>\s*/g, "").trim();
@@ -76,11 +87,22 @@ function transcript(s: AgentSession) {
     } else if (m.role === "assistant") {
       const say = textOf(m.content).trim();
       const tools = m.content.filter((c) => c.type === "toolCall").map((c: any) => c.name);
-      const line = [say, tools.length ? `tools: ${tools.join(", ")}` : ""].filter(Boolean).join("\n");
-      if (line) out.push({ role: "agent", text: line.slice(0, 4000) });
+      if (say || tools.length) out.push({ role: "agent", text: say.slice(0, 8000), tools });
     }
   }
   return out;
+}
+
+/** What an approval card shows: the command, the new file, or the lines an edit swaps. */
+export function approvalDetail(args: any): string {
+  if (typeof args?.command === "string") return `$ ${args.command}`;
+  if (typeof args?.content === "string") return args.content.slice(0, 1500);
+  if (Array.isArray(args?.edits)) {
+    const minus = (t: unknown) => String(t ?? "").split("\n").map((l) => `- ${l}`).join("\n");
+    const plus = (t: unknown) => String(t ?? "").split("\n").map((l) => `+ ${l}`).join("\n");
+    return args.edits.map((e: any) => `${minus(e?.old_text)}\n${plus(e?.new_text)}`).join("\n\n").slice(0, 1500);
+  }
+  return JSON.stringify(args ?? {}).slice(0, 1500);
 }
 
 function titleOf(s: AgentSession) {
@@ -225,11 +247,12 @@ export async function startCenter(opts: CenterOptions) {
       asker: (req) => new Promise((resolve) => {
         const id = randomBytes(6).toString("hex");
         approvals.set(id, resolve);
-        const detail = typeof req.args.command === "string" ? `$ ${req.args.command}` : JSON.stringify(req.args).slice(0, 1500);
+        const detail = approvalDetail(req.args);
         broadcast({ type: "approval", thread: holder.s!.session.id, id, title: `${req.tool.name}: ${req.summary}`, reason: req.reason, detail });
         setTimeout(() => { const fn = approvals.get(id); if (fn) { approvals.delete(id); fn("deny"); } }, 15 * 60_000);
       }),
     }).init();
+    if (s.needsModel && !opts.model && Bun.which("claude")) { s.setModel("claude-cli/sonnet"); s.needsModel = false; }
     holder.s = s;
     threads.set(s.session.id, s);
     s.subscribe((e) => {
@@ -268,7 +291,7 @@ export async function startCenter(opts: CenterOptions) {
         sockets.add(ws);
         const live: object[] = [...threads.values()].map(stateOf);
         live.push(...[...guests.values()].map(guestState));
-        send(ws, { type: "ready", cwd: opts.cwd, models: MODELS, recent: recent(), jobs: jobs(), threads: live, usage: planUsage(), lan: host === "0.0.0.0" ? lanHosts() : [] });
+        send(ws, { type: "ready", cwd: opts.cwd, project: basename(opts.cwd), branch: branchOf(opts.cwd), engines: engines(), models: MODELS, recent: recent(), jobs: jobs(), threads: live, usage: planUsage(), lan: host === "0.0.0.0" ? lanHosts() : [] });
       },
       close(ws: Sock) { sockets.delete(ws); },
       async message(ws: Sock, raw) {
@@ -307,9 +330,15 @@ export async function startCenter(opts: CenterOptions) {
               await guestTurn(engine, text, same);
               return;
             }
-            const s = (m.thread && threads.get(m.thread)) || await open();
-            if (!m.thread) send(ws, { type: "focus", id: s.session.id, messages: transcript(s) });
-            if (s.needsModel) { broadcast({ type: "evt", thread: s.session.id, evt: { type: "note", level: "warn", text: "No model yet. Pick Claude (your plan) after `claude` → /login, or set a model." } }); return; }
+            let s = m.thread ? threads.get(m.thread) : undefined;
+            if (!s) {
+              s = await open();
+              if (typeof m.model === "string" && MODELS.includes(m.model)) { s.setModel(m.model); s.needsModel = false; }
+              if (MODES.includes(m.mode)) s.setMode(m.mode);
+              broadcast({ type: "thread", thread: stateOf(s) });
+              send(ws, { type: "focus", id: s.session.id, messages: transcript(s) });
+            }
+            if (s.needsModel) { broadcast({ type: "evt", thread: s.session.id, evt: { type: "note", level: "warn", text: "rcode has no model yet. Install Claude Code and sign in (run `claude`, then /login), then pick a Claude model below. Or switch Who to Codex plan." } }); return; }
             broadcast({ type: "you", thread: s.session.id, text: typed.slice(0, 4000) });
             await s.prompt(text);
             const diff = turnDiff(opts.cwd, s.lastReceipt?.filesChanged ?? []);
@@ -320,10 +349,12 @@ export async function startCenter(opts: CenterOptions) {
           }
           if (m.type === "stop") { threads.get(String(m.thread))?.abort(); guests.get(String(m.thread))?.stop?.(); return; }
           const s = m.thread ? threads.get(String(m.thread)) : undefined;
-          if (m.type === "mode" && s) { s.setMode(m.mode); broadcast({ type: "thread", thread: stateOf(s) }); return; }
+          if (m.type === "view" && s) { send(ws, { type: "focus", id: s.session.id, messages: transcript(s) }); return; }
+          if (m.type === "mode" && s && MODES.includes(m.mode)) { s.setMode(m.mode); broadcast({ type: "thread", thread: stateOf(s) }); return; }
           if (m.type === "plain" && s) { s.setPlain(!!m.on); broadcast({ type: "thread", thread: stateOf(s) }); return; }
           if (m.type === "model" && s && typeof m.ref === "string") {
             s.setModel(m.ref);
+            s.needsModel = false;
             broadcast({ type: "thread", thread: stateOf(s) });
             return;
           }
@@ -397,6 +428,7 @@ export async function startCenter(opts: CenterOptions) {
 }
 
 export async function runCenter(opts: CenterOptions): Promise<number> {
+  process.env.PATH = widenPath();
   const c = await startCenter({ ...opts, token: opts.token ?? loadCenterToken() });
   const reach = opts.host === "0.0.0.0"
     ? "This link works on your network. Anyone who has it can drive the agent. The link is the key."
@@ -404,143 +436,3 @@ export async function runCenter(opts: CenterOptions): Promise<number> {
   console.log(`rcode center  ${c.url}\n  ${opts.cwd}\n  ${reach}\n  Ctrl+C to stop.`);
   return new Promise(() => {});
 }
-
-const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000000"><link rel="manifest" href="/manifest.webmanifest">
-<title>rcode center</title><style>
-:root{--bg:#000000;--fg:#ededed;--mut:#9e9e9e;--acc:#ff2a2a;--ok:#5fd38d;--bad:#ff6b6b;--card:#0f0f0f;--bd:#262626;--line:#1c1c1c;--you:#1f1f1f;--youbd:#2e2e2e;--onacc:#ffffff;--size:14px;--r:8px;--d:1;--in:cubic-bezier(.2,.8,.2,1);--raise:color-mix(in srgb,var(--fg) 6%,var(--card));--col:max(16px,calc((100% - 760px)/2))}
-*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--bd) transparent}html,body{margin:0;height:100%}
-body{background:var(--bg);color:var(--fg);font:var(--size)/1.55 "Geist","Inter",ui-sans-serif,system-ui,-apple-system,sans-serif;display:grid;grid-template-columns:264px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:100dvh;overflow:hidden;-webkit-font-smoothing:antialiased}
-header{grid-column:1/-1;display:flex;gap:12px;align-items:center;min-height:calc(48px*var(--d));padding:0 16px}
-header b{color:var(--acc);letter-spacing:.08em;font-weight:600}header span{color:var(--mut)}
-#cwd{color:var(--mut);font:12px/16px "Geist Mono",ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:auto}
-#side{overflow:auto;padding:4px 12px 16px;min-height:0}#side>button.acc:first-child{width:100%;margin:4px 0 6px}
-#main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:calc(var(--r)*1.5);margin:0 8px 8px 0}
-#bar{display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:6px 12px;border-bottom:1px solid var(--line);color:var(--mut)}
-#log{flex:1;overflow:auto;padding:20px var(--col);display:flex;flex-direction:column;gap:calc(14px*var(--d))}
-#work{display:none;align-items:center;gap:8px;color:var(--mut);font-size:12px;padding:0 var(--col) 8px}body.busy #work{display:flex}
-#work::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--acc);animation:pulse 1.2s var(--in) infinite}
-#dock{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:0 auto 12px;width:calc(100% - 24px);max-width:760px;padding:6px;background:var(--raise);border:1px solid var(--bd);border-radius:calc(var(--r)*1.5);transition:border-color .15s var(--in)}
-#dock:focus-within{border-color:color-mix(in srgb,var(--fg) 24%,var(--card))}
-textarea{flex:1 1 100%;resize:none;background:transparent;color:var(--fg);border:0;outline:0;padding:6px 8px 10px;font:inherit;min-height:48px;max-height:30vh}textarea::placeholder{color:var(--mut)}
-button,select,header input{font:inherit;font-size:13px;color:var(--fg);background:var(--raise);border:1px solid var(--bd);border-radius:var(--r);padding:calc(4px*var(--d)) 10px;transition:background .15s var(--in),color .15s var(--in),border-color .15s var(--in)}button,select{cursor:pointer}
-button:hover:not(:disabled){border-color:color-mix(in srgb,var(--fg) 26%,var(--card))}button:disabled{opacity:.45;cursor:default}
-:focus-visible{outline:2px solid color-mix(in srgb,var(--acc) 70%,transparent);outline-offset:1px}
-button.acc{background:var(--acc);color:var(--onacc);border-color:transparent;font-weight:600}
-#bar button,#bar select,#dock button{background:transparent;border-color:transparent;color:var(--mut)}#bar button:hover:not(:disabled),#dock button:hover:not(:disabled){color:var(--fg);background:var(--line)}#bar button.acc{background:var(--line);color:var(--fg)}
-#dock #send{order:9;margin-left:auto;background:var(--acc);color:var(--onacc);border-radius:calc(var(--r)*1.2)}
-h3{margin:18px 8px 4px;font-size:11px;line-height:16px;letter-spacing:.02em;color:var(--mut);font-weight:500}
-.item{padding:calc(6px*var(--d)) 8px;border-radius:var(--r);cursor:pointer;transition:background .15s var(--in)}.item:hover{background:var(--line)}.item.on{background:var(--raise);box-shadow:inset 2px 0 0 var(--acc)}
-.item div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.item small{display:block;color:var(--mut);font-size:11px}
-.m{padding:calc(10px*var(--d)) 12px;border-radius:calc(var(--r)*1.5);background:var(--raise);border:1px solid var(--bd);white-space:pre-wrap;word-wrap:break-word;animation:rise .15s var(--in)}
-.m.said{background:none;border-color:transparent;padding:0 2px}.m button{margin:8px 6px 0 0}
-.you{align-self:flex-end;max-width:80%;background:var(--you);border-color:var(--youbd)}
-.tool{font:12px/1.5 "Geist Mono",ui-monospace,Menlo,monospace;color:var(--mut);border-left:2px solid var(--bd);padding:1px 10px;animation:rise .15s var(--in)}
-.tool.ok{border-color:var(--ok)}.tool.fail{border-color:var(--bad);color:var(--bad)}
-.chip{font:12px/16px "Geist Mono",ui-monospace,Menlo,monospace;color:var(--mut)}
-.v-verified{color:var(--ok)}.v-failed,.v-unverified{color:var(--bad)}.v-read-only{color:var(--mut)}
-iframe.visual{display:block;width:100%;height:120px;border:1px solid var(--bd);border-radius:var(--r);background:#fff;margin-top:8px;transition:height .15s var(--in)}#bar>*{flex:none;white-space:nowrap}
-#side .chip{padding:2px 8px}#side>div:not(.item){padding:0 8px}
-pre.diff{font:12px/1.5 "Geist Mono",ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:10px;overflow:auto;max-height:240px;white-space:pre;animation:rise .15s var(--in)}
-label{color:var(--mut);display:flex;gap:6px;align-items:center}
-@keyframes rise{from{opacity:0;transform:translateY(4px)}}@keyframes pulse{50%{opacity:.25}}
-@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-${SKIN_CSS}
-@media(max-width:800px){body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr)}header{flex-wrap:wrap;gap:8px 12px;padding:8px 12px}#side{max-height:26dvh;padding:0 10px 8px}#main{margin:0;border-radius:calc(var(--r)*1.5) calc(var(--r)*1.5) 0 0;border-bottom:0}#bar{overflow-x:auto;flex-wrap:nowrap}#dock{width:calc(100% - 16px);margin-bottom:8px}}
-</style></head><body>
-<header><b>RCODE</b><span>center</span><select id="engine" title="Who does the work"><option value="rcode">rcode</option><option value="claude">Claude plan</option><option value="codex">Codex plan</option><option value="agent">Any agent</option></select><input id="agentcmd" placeholder="grok acp" title="Command that speaks the Agent Client Protocol" style="display:none"><span id="cwd"></span></header>
-<nav id="side"></nav>
-<section id="main"><div id="bar"></div><div id="log"></div><div id="work">Working</div>
-<form id="dock"><textarea id="box" rows="1" placeholder="Ask, or queue it as a mission. Enter sends, Shift+Enter adds a line."></textarea><button class="acc" id="send">Send</button></form></section>
-<script>
-const q=new URLSearchParams(location.search), tok=q.get("token");
-const side=document.getElementById("side"), log=document.getElementById("log"), bar=document.getElementById("bar"), box=document.getElementById("box");
-let ws, active=null, threads=[], recent=[], jobs=[], queueRunning=false, models=[], usage={claude:[],codex:0}, lan=[], devices=[], attached=null, watching=null, watchTimer=0;
-function watchDevice(d){watching=d;let img=document.getElementById("screen");if(!img){img=document.createElement("img");img.id="screen";img.alt="device";img.style.maxWidth="320px";img.style.borderRadius="10px";img.style.cursor="crosshair";log.appendChild(img);img.onclick=ev=>{const r=img.getBoundingClientRect();const x=Math.round((ev.clientX-r.left)/r.width*img.naturalWidth);const y=Math.round((ev.clientY-r.top)/r.height*img.naturalHeight);ws.send(JSON.stringify({type:"device",action:"tap",id:watching.id,kind:watching.kind,x,y}))};const keys=el("div");for(const [action,label] of [["home","Home"],["back","Back"]]){const b=el("button",null,label);b.onclick=()=>ws.send(JSON.stringify({type:"device",action,id:watching.id,kind:watching.kind}));keys.appendChild(b)}log.appendChild(keys)}clearInterval(watchTimer);const tick=()=>{if(!watching)return;img.src="/device/frame?token="+encodeURIComponent(tok)+"&id="+encodeURIComponent(watching.id)+"&kind="+watching.kind+"&t="+Date.now()};tick();watchTimer=setInterval(tick,900)}
-const view={};
-function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}
-function focus(id,messages){active=id;view[id]=messages||view[id]||[];paint();if(messages){log.replaceChildren();for(const m of messages){const d=addLine(m.role==="user"?"you":"m",m.text);if(m.role!=="user")d.classList.add("said")}}}
-function addLine(cls,text){const d=el("div",cls,text);log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
-function thread(){return threads.find(t=>t.id===active)}
-function paint(){
-  side.replaceChildren();
-  const a=el("button","acc","New thread");a.onclick=()=>ws.send(JSON.stringify({type:"new",engine:document.getElementById("engine").value}));side.appendChild(a);
-  const h1=el("h3",null,"Threads");side.appendChild(h1);
-  const all=[...threads];
-  if(!all.length)side.appendChild(el("div","chip","No live thread yet."));
-  for(const t of all){const d=el("div","item"+(t.id===active?" on":""));d.append(el("div",null,t.title));d.append(el("small",null,(t.running?"working · ":"")+t.model));d.onclick=()=>focus(t.id);side.appendChild(d)}
-  const h2=el("h3",null,"Recent");side.appendChild(h2);
-  for(const r of recent.slice(0,8)){const d=el("div","item");d.append(el("div",null,r.title||"(untitled)"));d.append(el("small",null,r.messages+" messages"));d.onclick=()=>ws.send(JSON.stringify({type:"open",file:r.file}));side.appendChild(d)}
-  const h3=el("h3",null,"Missions");side.appendChild(h3);
-  const row=el("div");row.style.display="flex";row.style.gap="6px";
-  const run=el("button",null,queueRunning?"Running…":"Run queued");run.disabled=queueRunning;run.onclick=()=>{const t=thread();ws.send(JSON.stringify({type:"queue-run",model:t&&t.model}))};row.appendChild(run);
-  const clr=el("button",null,"Clear done");clr.onclick=()=>ws.send(JSON.stringify({type:"queue-clear"}));row.appendChild(clr);
-  side.appendChild(row);
-  if(!jobs.length)side.appendChild(el("div","chip","Nothing queued. Queue adds work without sending it."));
-  for(const j of jobs){const d=el("div","item");const mark=j.status==="done"?"✓":j.status==="failed"?"✗":j.status==="running"?"◐":"○";d.append(el("div",null,mark+" "+j.prompt.slice(0,80)));const sub=j.error||j.result||j.verdict||j.status;d.append(el("small",null,sub));side.appendChild(d)}
-  side.appendChild(el("h3",null,"Plans"));
-  const spent=threads.reduce((s,t)=>s+(t.guest?0:Number(t.cost)||0),0);
-  side.appendChild(el("div","chip","rcode $"+spent.toFixed(3)+" from receipts"));
-  if(!usage.claude.length)side.appendChild(el("div","chip","Claude plan: no local stats yet"));
-  for(const c of usage.claude.slice(0,3))side.appendChild(el("div","chip","claude "+String(c.model).slice(0,22)+" · "+Math.round((c.input+c.output)/1000)+"k"));
-  side.appendChild(el("div","chip","Codex threads: "+(usage.codex||0)));
-  side.appendChild(el("h3",null,"Devices"));
-  const look=el("button",null,"Look for phones");look.onclick=()=>ws.send(JSON.stringify({type:"devices"}));side.appendChild(look);
-  if(!devices.length)side.appendChild(el("div","chip","None yet. Look checks Xcode and adb."));
-  for(const d of devices){const row=el("div","item");row.append(el("div",null,d.name+(d.state&&d.state!=="Booted"?" · off":"")));if(d.state&&d.state!=="Booted"){const start=el("button",null,"Start");start.onclick=ev=>{ev.stopPropagation();ws.send(JSON.stringify({type:"device",action:"boot",id:d.id,kind:d.kind}))};row.appendChild(start)}else{const w=el("button",null,"Watch");w.onclick=ev=>{ev.stopPropagation();watchDevice(d)};row.appendChild(w)}side.appendChild(row)}
-  bar.replaceChildren();
-  const t=thread();document.body.classList.toggle("busy",!!(t&&t.running));
-  if(!t){bar.appendChild(el("span","chip","Start a thread, or open a recent one."));return}
-  if(t.guest){bar.appendChild(el("span","chip",t.model+" · its own tools, outside rcode's checks"));const stop=el("button",null,"Stop");stop.onclick=()=>ws.send(JSON.stringify({type:"stop",thread:t.id}));bar.appendChild(stop);return}
-  for(const ref of models){const b=el("button",null,ref.replace("claude-cli/","claude "));if(t.model===ref)b.className="acc";b.onclick=()=>ws.send(JSON.stringify({type:"model",thread:t.id,ref:ref}));bar.appendChild(b)}
-  const sel=el("select");for(const mode of["ask","auto-edit","full","plan"]){const o=el("option",null,mode);o.value=mode;if(mode===t.mode)o.selected=true;sel.appendChild(o)}sel.onchange=()=>ws.send(JSON.stringify({type:"mode",thread:t.id,mode:sel.value}));bar.appendChild(sel);
-  const plain=el("label");const cb=document.createElement("input");cb.type="checkbox";cb.checked=!!t.plain;cb.onchange=()=>ws.send(JSON.stringify({type:"plain",thread:t.id,on:cb.checked}));plain.append(cb,document.createTextNode("plain"));bar.appendChild(plain);
-  if(t.receipt)bar.appendChild(el("span","chip v-"+t.receipt.verdict,t.receipt.verdict+" "+t.receipt.hash.slice(0,8)));
-  const undo=el("button",null,"Undo");undo.onclick=()=>ws.send(JSON.stringify({type:"undo",thread:t.id}));bar.appendChild(undo);
-  const copy=el("button",null,"Copy repo");copy.onclick=()=>{const name=prompt("Name this copy. Letters, numbers, dashes.","wip");if(name)ws.send(JSON.stringify({type:"worktree",name}))};bar.appendChild(copy);
-  const pr=el("button",null,"Pull request");pr.onclick=()=>ws.send(JSON.stringify({type:"pr",thread:t.id}));bar.appendChild(pr);
-  bar.appendChild(el("span","chip","$"+Number(t.cost||0).toFixed(3)));
-  const stop=el("button",null,"Stop");stop.onclick=()=>ws.send(JSON.stringify({type:"stop",thread:t.id}));bar.appendChild(stop);
-}
-function drawVisuals(node){if(node.dataset.drew)return;const raw=node.textContent;if(!raw.includes("\`\`\`html\\n"))return;node.dataset.drew="1";const htmls=[];const prose=raw.replace(/\`\`\`html\\n([\\s\\S]*?)\`\`\`/g,(_,h)=>{htmls.push(h);return ""}).replace(/\\n{3,}/g,"\\n\\n").trim();node.textContent=prose;for(const html of htmls.slice(0,3)){const f=document.createElement("iframe");f.className="visual";f.setAttribute("sandbox","allow-scripts");f.srcdoc='<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \\'none\\'; img-src data: blob:; style-src \\'unsafe-inline\\'; script-src \\'unsafe-inline\\'; font-src data:"><style>body{margin:0;padding:12px;color:#18181b;font:14px/1.5 system-ui,sans-serif}</style></head><body>'+html+'<script>new ResizeObserver(()=>parent.postMessage({rcodeH:document.body.getBoundingClientRect().bottom},"*")).observe(document.body)<\\/script></body></html>';node.appendChild(f)}}
-addEventListener("message",e=>{const h=e.data&&e.data.rcodeH;if(typeof h!=="number")return;for(const f of document.querySelectorAll("iframe.visual"))if(f.contentWindow===e.source)f.style.height=Math.min(640,Math.max(32,Math.ceil(h)))+"px"});
-function conn(){
-  ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws?token="+encodeURIComponent(tok));
-  ws.onmessage=e=>{const m=JSON.parse(e.data);
-    if(m.type==="ready"){usage=m.usage||usage;lan=m.lan||[];document.getElementById("cwd").textContent=m.cwd+(lan.length?"  ·  "+lan.join(", "):"");models=m.models;recent=m.recent;jobs=m.jobs;threads=m.threads;queueRunning=false;paint();if(!log.childElementCount)log.appendChild(el("div","chip",m.cwd+(lan.length?"  ·  open on this network":"  ·  add to your home screen from the browser menu")))}
-    else if(m.type==="focus")focus(m.id,m.messages);
-    else if(m.type==="thread"){const i=threads.findIndex(t=>t.id===m.thread.id);if(i<0)threads.unshift(m.thread);else threads[i]=m.thread;if(!active)active=m.thread.id;paint()}
-    else if(m.type==="you"&&m.thread===active)addLine("m you",m.text);
-    else if(m.type==="queue"){jobs=m.jobs;queueRunning=m.running;paint()}
-    else if(m.type==="note")addLine("m",m.text);
-    else if(m.type==="approval"&&m.thread===active){const d=addLine("m","Approve: "+m.title+"\\n"+m.reason+(m.detail?"\\n"+m.detail:""));for(const[k,lab]of[["allow","Allow"],["allow-session","Always"],["deny","Deny"]]){const b=el("button",null,lab);b.onclick=()=>{ws.send(JSON.stringify({type:"approval",id:m.id,decision:k}));b.disabled=true};d.appendChild(b)}}
-    else if(m.type==="evt"&&m.thread===active){const ev=m.evt;
-      if(ev.type==="delta"&&ev.kind==="text"){let d=log.querySelector("[data-live]");if(!d){d=addLine("m","");d.dataset.live="1";d.classList.add("said")}d.textContent+=ev.text;log.scrollTop=log.scrollHeight}
-      else if(ev.type==="tool")addLine("tool "+(ev.status==="run"?"":ev.status),(ev.status==="run"?"→ ":"")+(ev.name||"")+" "+(ev.summary||ev.text||""));
-      else if(ev.type==="note")addLine("m",ev.text);
-      else if(ev.type==="diff"){const p=el("pre","diff",(ev.verdict?ev.verdict+"\\n":"")+ev.text);log.appendChild(p);log.scrollTop=log.scrollHeight}
-      else if(ev.type==="turn"){const d=log.querySelector("[data-live]");if(d){delete d.dataset.live;drawVisuals(d)}}
-    }
-    else if(m.type==="devices"){devices=m.list||[];paint()}
-    else if(m.type==="usage"){usage=m.usage;paint()}
-    else if(m.type==="shot"&&m.png){const img=document.createElement("img");img.alt="device";img.src="data:image/png;base64,"+m.png;img.style.maxWidth="280px";img.style.borderRadius="10px";log.appendChild(img)}
-  };
-  ws.onclose=()=>setTimeout(conn,1200);
-}
-conn();
-box.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();document.getElementById("dock").requestSubmit()}});
-document.getElementById("dock").onsubmit=e=>{e.preventDefault();const v=box.value.trim();if(!v||!ws)return;box.value="";
-  if(e.submitter&&e.submitter.id!=="send"){ws.send(JSON.stringify({type:"queue-add",text:v}));return}
-  const eng=document.getElementById("engine").value;ws.send(JSON.stringify({type:"prompt",thread:active,text:v,engine:eng,command:document.getElementById("agentcmd").value,file:attached}));attached=null;attach.textContent="Attach"};
-document.getElementById("engine").onchange=function(){document.getElementById("agentcmd").style.display=this.value==="agent"?"":"none"};
-const queueBtn=el("button",null,"Queue");queueBtn.type="button";queueBtn.onclick=()=>{const v=box.value.trim();if(!v)return;box.value="";ws.send(JSON.stringify({type:"queue-add",text:v}))};
-const mic=el("button",null,"Speak");mic.type="button";mic.title="Dictation stays in this browser. rcode never receives the audio.";
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-if(!SR)mic.disabled=true;else mic.onclick=()=>{const r=new SR();r.onresult=ev=>{box.value=(box.value+" "+ev.results[0][0].transcript).trim()};r.onend=()=>{mic.textContent="Speak"};mic.textContent="Listening…";r.start()};
-const file=document.createElement("input");file.type="file";file.hidden=true;file.accept="text/*,.md,.json,.ts,.tsx,.py,.go,.rs,.txt,.csv";
-const attach=el("button",null,"Attach");attach.type="button";attach.onclick=()=>file.click();
-file.onchange=()=>{const f=file.files&&file.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{attached={name:f.name,text:String(rd.result||"")};attach.textContent=f.name.slice(0,18)};rd.readAsText(f)};
-const quote=el("button",null,"Quote");quote.type="button";quote.onclick=()=>{const lines=[...log.querySelectorAll(".m.said")];const last=lines[lines.length-1];if(!last)return;const said=last.textContent.trim();if(!said)return;box.value="> "+said.split("\\n").join("\\n> ")+"\\n";box.focus()};
-document.getElementById("dock").append(queueBtn,mic,attach,file,quote);
-${skinScript()}
-const shareBtn=el("button",null,"Share");shareBtn.title="A link for a device that is not on this network. Cloudflare carries it.";shareBtn.onclick=()=>ws&&ws.send(JSON.stringify({type:"share"}));document.querySelector("header").appendChild(shareBtn);
-</script></body></html>`;

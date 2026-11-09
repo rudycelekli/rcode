@@ -1,13 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deviceArgv, startShare, tunnelUrl, writeDesktopApp } from "../src/center/desk.ts";
+import { deviceArgv, startShare, tunnelUrl, widenPath, writeDesktopApp } from "../src/center/desk.ts";
 import { loadCenterToken } from "../src/center/token.ts";
 import { parseSimctlAll } from "../src/center/studio.ts";
 
 describe("desk", () => {
+  test("a double-clicked app still finds claude and codex from nvm and ~/.local/bin", () => {
+    const home = mkdtempSync(join(tmpdir(), "rcode-home-"));
+    for (const d of [".local/bin", ".nvm/versions/node/v9.1.0/bin", ".nvm/versions/node/v22.19.0/bin"]) mkdirSync(join(home, d), { recursive: true });
+    const parts = widenPath("/usr/bin:/bin", home).split(":");
+    expect(parts.slice(0, 2)).toEqual(["/usr/bin", "/bin"]);
+    expect(parts).toContain(join(home, ".local/bin"));
+    expect(parts.indexOf(join(home, ".nvm/versions/node/v22.19.0/bin"))).toBeLessThan(parts.indexOf(join(home, ".nvm/versions/node/v9.1.0/bin")));
+    expect(parts).not.toContain(join(home, ".bun/bin"));
+    expect(widenPath(parts.join(":"), home)).toBe(parts.join(":"));
+  });
+
   test("a cloudflared line is the public link, and a fake tunnel prints one", async () => {
     expect(tunnelUrl("log https://safe-name.trycloudflare.com more")).toBe("https://safe-name.trycloudflare.com");
     expect(tunnelUrl("no link")).toBeUndefined();

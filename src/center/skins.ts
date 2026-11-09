@@ -58,13 +58,13 @@ body[data-font=sans]{font-family:ui-sans-serif,system-ui,-apple-system,sans-seri
 body[data-font=mono]{font-family:ui-monospace,Menlo,monospace}
 body[data-font=serif]{font-family:ui-serif,Georgia,"Times New Roman",serif}
 body[data-font=classic]{font-family:Tahoma,Verdana,"MS Sans Serif",sans-serif}
-body[data-fx=bevel] button,body[data-fx=bevel] select,body[data-fx=bevel] textarea,body[data-fx=bevel] .m{border-width:2px;border-style:outset}
+body[data-fx=bevel] button,body[data-fx=bevel] #dock,body[data-fx=bevel] .card,body[data-fx=bevel] .you{border-width:2px;border-style:outset}
 body[data-fx=bevel] button:active{border-style:inset}
-body[data-fx=bevel] header{background:linear-gradient(180deg,var(--bd),var(--bg))}
-body[data-fx=bevel] header b{background:#000;color:var(--ok);padding:3px 8px;border:2px inset var(--bd);font-family:ui-monospace,Menlo,monospace}
+body[data-fx=bevel] #top{background:linear-gradient(180deg,var(--bd),var(--card))}
+body[data-fx=bevel] #brand b{background:#000;color:var(--ok);padding:3px 8px;border:2px inset var(--bd);font-family:ui-monospace,Menlo,monospace}
 body[data-fx=scan]::after{content:"";position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px);z-index:50}
 body[data-fx=scan]{text-shadow:0 0 4px color-mix(in srgb,var(--fg) 45%,transparent)}
-body[data-fx=glow] header b,body[data-fx=glow] button.acc{text-shadow:0 0 8px var(--acc);box-shadow:0 0 14px color-mix(in srgb,var(--acc) 45%,transparent)}
+body[data-fx=glow] #brand b,body[data-fx=glow] button.acc,body[data-fx=glow] #send{text-shadow:0 0 8px var(--acc);box-shadow:0 0 14px color-mix(in srgb,var(--acc) 45%,transparent)}
 body[data-fx=glow] .item.on{box-shadow:0 0 12px color-mix(in srgb,var(--acc) 35%,transparent)}
 dialog#skins{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:var(--r);max-width:min(640px,94vw);padding:16px}
 dialog#skins::backdrop{background:rgba(0,0,0,.5)}
@@ -119,7 +119,6 @@ function skinPanel(){let d=document.getElementById("skins");if(!d){d=document.cr
   if(!d.open)d.showModal()}
 (()=>{const want=new URLSearchParams(location.search).get("skin");const named=want&&SKINS.find(s=>s.name.toLowerCase().replace(/ /g,"-")===want.toLowerCase());
   let saved=null;try{saved=JSON.parse(localStorage.getItem("rcode.skin")||"null")}catch{}
-  applySkin(named||saved||SKINS[0]);
-  const b=el("button",null,"Skin");b.title="Change how the center looks";b.onclick=skinPanel;document.querySelector("header").appendChild(b)})();
+  applySkin(named||saved||SKINS[0])})();
 `;
 }
