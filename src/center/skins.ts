@@ -8,7 +8,7 @@ export interface Skin {
   name: string;
   bg: string; fg: string; mut: string; acc: string; ok: string; bad: string;
   card: string; bd: string; line: string; you: string; youbd: string; onacc: string;
-  font: "sans" | "mono" | "serif" | "classic";
+  font: "geist" | "sans" | "mono" | "serif" | "classic";
   fx: "none" | "bevel" | "scan" | "glow";
   size: number;
   radius: number;
@@ -18,9 +18,9 @@ export interface Skin {
 /** Runs on the server and, via toString, in the page. It must not reference anything outside itself. */
 export function cleanSkin(raw: unknown): Skin {
   const out: Record<string, string | number> = {
-    name: "Ember", bg: "#0c0c0e", fg: "#eceae6", mut: "#8d8d93", acc: "#ff8a3d", ok: "#7dcea0", bad: "#e06c75",
-    card: "#151518", bd: "#2a2a30", line: "#222228", you: "#2a2118", youbd: "#4a341f", onacc: "#1a120c",
-    font: "sans", fx: "none", size: 14, radius: 10, density: 100,
+    name: "Rune", bg: "#000000", fg: "#ededed", mut: "#9e9e9e", acc: "#ff2a2a", ok: "#5fd38d", bad: "#ff6b6b",
+    card: "#0f0f0f", bd: "#262626", line: "#1c1c1c", you: "#1f1f1f", youbd: "#2e2e2e", onacc: "#ffffff",
+    font: "geist", fx: "none", size: 14, radius: 8, density: 100,
   };
   const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const hex = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -33,7 +33,7 @@ export function cleanSkin(raw: unknown): Skin {
     if (r[k] !== undefined && r[k] !== null && r[k] !== "" && Number.isFinite(v)) out[k] = Math.min(hi, Math.max(lo, Math.round(v)));
   };
   num("size", 12, 18); num("radius", 0, 16); num("density", 70, 130);
-  if (typeof r.font === "string" && ["sans", "mono", "serif", "classic"].includes(r.font)) out.font = r.font;
+  if (typeof r.font === "string" && ["geist", "sans", "mono", "serif", "classic"].includes(r.font)) out.font = r.font;
   if (typeof r.fx === "string" && ["none", "bevel", "scan", "glow"].includes(r.fx)) out.fx = r.fx;
   if (typeof r.name === "string") out.name = r.name.replace(/[^\w .'-]/g, "").trim().slice(0, 32) || "Custom";
   return out as unknown as Skin;
@@ -41,6 +41,8 @@ export function cleanSkin(raw: unknown): Skin {
 
 export const SKINS: Skin[] = [
   {},
+  { name: "Ember", bg: "#0c0c0e", fg: "#eceae6", mut: "#8d8d93", acc: "#ff8a3d", ok: "#7dcea0", bad: "#e06c75", card: "#151518", bd: "#2a2a30", line: "#222228", you: "#2a2118", youbd: "#4a341f", onacc: "#1a120c", font: "sans", radius: 10 },
+  { name: "Rune Light", bg: "#f4f4f5", fg: "#18181b", mut: "#6b6b73", acc: "#e5202a", ok: "#15803d", bad: "#c62828", card: "#ffffff", bd: "#e2e2e5", line: "#ececef", you: "#f0f0f2", youbd: "#e0e0e4", onacc: "#ffffff" },
   { name: "Llama", bg: "#1d1d27", fg: "#00f000", mut: "#9fa0b8", acc: "#f0c818", ok: "#00f000", bad: "#ff4040", card: "#000000", bd: "#50506a", line: "#2c2c3a", you: "#102010", youbd: "#2f6f2f", onacc: "#000000", font: "classic", fx: "bevel", radius: 0, density: 90 },
   { name: "Paper", bg: "#f7f5f0", fg: "#1d1b18", mut: "#6e6a63", acc: "#c2410c", ok: "#15803d", bad: "#b91c1c", card: "#ffffff", bd: "#ddd8cf", line: "#e9e5dd", you: "#fff1e6", youbd: "#f3c9a6", onacc: "#ffffff", font: "serif", radius: 12, density: 110 },
   { name: "Synthwave", bg: "#1a0b2e", fg: "#f8e9ff", mut: "#a68cc4", acc: "#ff3ea5", ok: "#2de2e6", bad: "#ff6b6b", card: "#24103f", bd: "#4b2a75", line: "#2f1652", you: "#3a1048", youbd: "#ff3ea5", onacc: "#1a0b2e", fx: "glow", radius: 14 },
@@ -52,6 +54,7 @@ export const SKINS: Skin[] = [
 
 /** Styles keyed off the skin's variables and the data-font / data-fx attributes on <body>. */
 export const SKIN_CSS = `
+body[data-font=sans]{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
 body[data-font=mono]{font-family:ui-monospace,Menlo,monospace}
 body[data-font=serif]{font-family:ui-serif,Georgia,"Times New Roman",serif}
 body[data-font=classic]{font-family:Tahoma,Verdana,"MS Sans Serif",sans-serif}
@@ -77,7 +80,7 @@ export function skinScript(): string {
   return `
 const SKINS=${JSON.stringify(SKINS)};
 const cleanSkin=(${cleanSkin.toString()});
-const FONT_STACK={sans:"ui-sans-serif,system-ui,-apple-system",mono:"ui-monospace,Menlo,monospace",serif:"ui-serif,Georgia,serif",classic:"Tahoma,Verdana,sans-serif"};
+const FONT_STACK={geist:"Geist,Inter,ui-sans-serif,system-ui",sans:"ui-sans-serif,system-ui,-apple-system",mono:"ui-monospace,Menlo,monospace",serif:"ui-serif,Georgia,serif",classic:"Tahoma,Verdana,sans-serif"};
 let skin=cleanSkin(SKINS[0]);
 function applySkin(s){skin=cleanSkin(s);const st=document.documentElement.style;
   for(const k of["bg","fg","mut","acc","ok","bad","card","bd","line","you","youbd","onacc"])st.setProperty("--"+k,skin[k]);
@@ -89,7 +92,7 @@ function hexOf(h,s,l){s/=100;l/=100;const f=n=>{const k=(n+h/30)%12;const c=l-s*
 function surprise(){const h=Math.floor(Math.random()*360),a=(h+150+Math.floor(Math.random()*60))%360,dark=Math.random()<.75;
   const L=dark?[7,11,20,16,24,90,60]:[96,100,84,90,88,12,40];
   return {name:"Surprise "+h,bg:hexOf(h,22,L[0]),card:hexOf(h,20,L[1]),bd:hexOf(h,18,L[2]),line:hexOf(h,16,L[3]),you:hexOf(a,30,L[4]),youbd:hexOf(a,45,dark?38:70),fg:hexOf(h,12,L[5]),mut:hexOf(h,10,L[6]),acc:hexOf(a,85,dark?62:42),onacc:hexOf(a,30,dark?8:98),ok:hexOf(140,55,dark?62:32),bad:hexOf(355,70,dark?64:42),
-    font:["sans","mono","serif","classic"][Math.floor(Math.random()*4)],fx:["none","none","glow","scan","bevel"][Math.floor(Math.random()*5)],radius:Math.floor(Math.random()*17),size:14,density:90+Math.floor(Math.random()*30)}}
+    font:["geist","sans","mono","serif","classic"][Math.floor(Math.random()*5)],fx:["none","none","glow","scan","bevel"][Math.floor(Math.random()*5)],radius:Math.floor(Math.random()*17),size:14,density:90+Math.floor(Math.random()*30)}}
 function skinPanel(){let d=document.getElementById("skins");if(!d){d=document.createElement("dialog");d.id="skins";document.body.appendChild(d)}
   d.replaceChildren();d.appendChild(el("h3",null,"Skins"));
   const grid=el("div","skingrid");
@@ -104,7 +107,7 @@ function skinPanel(){let d=document.getElementById("skins");if(!d){d=document.cr
   const range=(k,lo,hi,label)=>{const r=document.createElement("input");r.type="range";r.min=lo;r.max=hi;r.value=skin[k];r.oninput=()=>applySkin({...skin,[k]:Number(r.value)});knob(label,r)};
   range("size",12,18,"Text size");range("radius",0,16,"Roundness");range("density",70,130,"Spacing");
   const pick=(k,opts,label)=>{const s=el("select");for(const o of opts){const op=el("option",null,o);op.value=o;if(skin[k]===o)op.selected=true;s.appendChild(op)}s.onchange=()=>applySkin({...skin,[k]:s.value});knob(label,s)};
-  pick("font",["sans","mono","serif","classic"],"Font");pick("fx",["none","bevel","scan","glow"],"Effect");
+  pick("font",["geist","sans","mono","serif","classic"],"Font");pick("fx",["none","bevel","scan","glow"],"Effect");
   d.appendChild(knobs);
   const row=el("div");row.style.display="flex";row.style.gap="8px";row.style.flexWrap="wrap";
   const sur=el("button","acc","Surprise me");sur.onclick=()=>{applySkin(surprise());skinPanel()};

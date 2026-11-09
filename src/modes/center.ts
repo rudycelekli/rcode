@@ -248,7 +248,7 @@ export async function startCenter(opts: CenterOptions) {
     hostname: host,
     fetch(req, srv) {
       const url = new URL(req.url);
-      if (url.pathname === "/manifest.webmanifest") return new Response(JSON.stringify({ name: "rcode center", short_name: "rcode", display: "standalone", start_url: "/", background_color: "#0c0c0e", theme_color: "#0c0c0e" }), { headers: { "content-type": "application/manifest+json" } });
+      if (url.pathname === "/manifest.webmanifest") return new Response(JSON.stringify({ name: "rcode center", short_name: "rcode", display: "standalone", start_url: "/", background_color: "#000000", theme_color: "#000000" }), { headers: { "content-type": "application/manifest+json" } });
       if (url.pathname === "/device/frame") {
         if (!authed(token, url.searchParams.get("token"))) return new Response("unauthorized", { status: 401 });
         const shot = deviceShot(url.searchParams.get("kind") ?? "", url.searchParams.get("id") ?? "");
@@ -405,40 +405,52 @@ export async function runCenter(opts: CenterOptions): Promise<number> {
   return new Promise(() => {});
 }
 
-const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0c0c0e"><link rel="manifest" href="/manifest.webmanifest">
+const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="theme-color" content="#000000"><link rel="manifest" href="/manifest.webmanifest">
 <title>rcode center</title><style>
-:root{--bg:#0c0c0e;--fg:#eceae6;--mut:#8d8d93;--acc:#ff8a3d;--ok:#7dcea0;--bad:#e06c75;--card:#151518;--bd:#2a2a30;--line:#222228;--you:#2a2118;--youbd:#4a341f;--onacc:#1a120c;--size:14px;--r:10px;--d:1}
-*{box-sizing:border-box}html,body{margin:0;height:100%}
-body{background:var(--bg);color:var(--fg);font:var(--size)/1.45 ui-sans-serif,system-ui,-apple-system;display:grid;grid-template-columns:280px 1fr;grid-template-rows:auto minmax(0,1fr) auto;height:100dvh;overflow:hidden}
-header{grid-column:1/3;display:flex;gap:14px;align-items:center;padding:calc(10px*var(--d)) 16px;border-bottom:1px solid var(--bd)}
-header b{color:var(--acc);letter-spacing:.04em}#cwd{color:var(--mut);font:12px/1 ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#side{border-right:1px solid var(--bd);overflow:auto;padding:12px;min-height:0}
-#main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
-#bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--bd)}
-#log{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:calc(8px*var(--d))}
-#dock{grid-column:1/3;display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--bd)}
-textarea{flex:1;resize:none;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:var(--r);padding:10px;font:inherit;min-height:44px;max-height:30vh}
-button,select,header input{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:calc(var(--r)*.8);padding:calc(5px*var(--d)) 10px}button,select{cursor:pointer}
-button.acc{background:var(--acc);color:var(--onacc);border:0;font-weight:650}
-h3{margin:14px 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);font-weight:650}
-.item{padding:calc(7px*var(--d)) 8px;border-radius:calc(var(--r)*.8);cursor:pointer;border:1px solid transparent}.item:hover{background:var(--card)}.item.on{border-color:var(--acc);background:var(--card)}
-.item small{display:block;color:var(--mut);font-size:11px}
-.m{padding:calc(8px*var(--d)) 10px;border-radius:var(--r);background:var(--card);border:1px solid var(--bd);white-space:pre-wrap;word-wrap:break-word;max-width:860px}
-.you{align-self:flex-end;background:var(--you);border-color:var(--youbd)}
-.tool{font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--mut);border-left:2px solid var(--bd);padding:2px 8px}
+:root{--bg:#000000;--fg:#ededed;--mut:#9e9e9e;--acc:#ff2a2a;--ok:#5fd38d;--bad:#ff6b6b;--card:#0f0f0f;--bd:#262626;--line:#1c1c1c;--you:#1f1f1f;--youbd:#2e2e2e;--onacc:#ffffff;--size:14px;--r:8px;--d:1;--in:cubic-bezier(.2,.8,.2,1);--raise:color-mix(in srgb,var(--fg) 6%,var(--card));--col:max(16px,calc((100% - 760px)/2))}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--bd) transparent}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font:var(--size)/1.55 "Geist","Inter",ui-sans-serif,system-ui,-apple-system,sans-serif;display:grid;grid-template-columns:264px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:100dvh;overflow:hidden;-webkit-font-smoothing:antialiased}
+header{grid-column:1/-1;display:flex;gap:12px;align-items:center;min-height:calc(48px*var(--d));padding:0 16px}
+header b{color:var(--acc);letter-spacing:.08em;font-weight:600}header span{color:var(--mut)}
+#cwd{color:var(--mut);font:12px/16px "Geist Mono",ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:auto}
+#side{overflow:auto;padding:4px 12px 16px;min-height:0}#side>button.acc:first-child{width:100%;margin:4px 0 6px}
+#main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:calc(var(--r)*1.5);margin:0 8px 8px 0}
+#bar{display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:6px 12px;border-bottom:1px solid var(--line);color:var(--mut)}
+#log{flex:1;overflow:auto;padding:20px var(--col);display:flex;flex-direction:column;gap:calc(14px*var(--d))}
+#work{display:none;align-items:center;gap:8px;color:var(--mut);font-size:12px;padding:0 var(--col) 8px}body.busy #work{display:flex}
+#work::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--acc);animation:pulse 1.2s var(--in) infinite}
+#dock{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:0 auto 12px;width:calc(100% - 24px);max-width:760px;padding:6px;background:var(--raise);border:1px solid var(--bd);border-radius:calc(var(--r)*1.5);transition:border-color .15s var(--in)}
+#dock:focus-within{border-color:color-mix(in srgb,var(--fg) 24%,var(--card))}
+textarea{flex:1 1 100%;resize:none;background:transparent;color:var(--fg);border:0;outline:0;padding:6px 8px 10px;font:inherit;min-height:48px;max-height:30vh}textarea::placeholder{color:var(--mut)}
+button,select,header input{font:inherit;font-size:13px;color:var(--fg);background:var(--raise);border:1px solid var(--bd);border-radius:var(--r);padding:calc(4px*var(--d)) 10px;transition:background .15s var(--in),color .15s var(--in),border-color .15s var(--in)}button,select{cursor:pointer}
+button:hover:not(:disabled){border-color:color-mix(in srgb,var(--fg) 26%,var(--card))}button:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:2px solid color-mix(in srgb,var(--acc) 70%,transparent);outline-offset:1px}
+button.acc{background:var(--acc);color:var(--onacc);border-color:transparent;font-weight:600}
+#bar button,#bar select,#dock button{background:transparent;border-color:transparent;color:var(--mut)}#bar button:hover:not(:disabled),#dock button:hover:not(:disabled){color:var(--fg);background:var(--line)}#bar button.acc{background:var(--line);color:var(--fg)}
+#dock #send{order:9;margin-left:auto;background:var(--acc);color:var(--onacc);border-radius:calc(var(--r)*1.2)}
+h3{margin:18px 8px 4px;font-size:11px;line-height:16px;letter-spacing:.02em;color:var(--mut);font-weight:500}
+.item{padding:calc(6px*var(--d)) 8px;border-radius:var(--r);cursor:pointer;transition:background .15s var(--in)}.item:hover{background:var(--line)}.item.on{background:var(--raise);box-shadow:inset 2px 0 0 var(--acc)}
+.item div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.item small{display:block;color:var(--mut);font-size:11px}
+.m{padding:calc(10px*var(--d)) 12px;border-radius:calc(var(--r)*1.5);background:var(--raise);border:1px solid var(--bd);white-space:pre-wrap;word-wrap:break-word;animation:rise .15s var(--in)}
+.m.said{background:none;border-color:transparent;padding:0 2px}.m button{margin:8px 6px 0 0}
+.you{align-self:flex-end;max-width:80%;background:var(--you);border-color:var(--youbd)}
+.tool{font:12px/1.5 "Geist Mono",ui-monospace,Menlo,monospace;color:var(--mut);border-left:2px solid var(--bd);padding:1px 10px;animation:rise .15s var(--in)}
 .tool.ok{border-color:var(--ok)}.tool.fail{border-color:var(--bad);color:var(--bad)}
-.chip{font:12px/1 ui-monospace,Menlo,monospace;color:var(--mut)}
+.chip{font:12px/16px "Geist Mono",ui-monospace,Menlo,monospace;color:var(--mut)}
 .v-verified{color:var(--ok)}.v-failed,.v-unverified{color:var(--bad)}.v-read-only{color:var(--mut)}
-iframe.visual{width:100%;height:260px;border:1px solid var(--bd);border-radius:10px;background:#fff}
-pre.diff{font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px;overflow:auto;max-height:240px;white-space:pre}
+iframe.visual{display:block;width:100%;height:120px;border:1px solid var(--bd);border-radius:var(--r);background:#fff;margin-top:8px;transition:height .15s var(--in)}#bar>*{flex:none;white-space:nowrap}
+#side .chip{padding:2px 8px}#side>div:not(.item){padding:0 8px}
+pre.diff{font:12px/1.5 "Geist Mono",ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:10px;overflow:auto;max-height:240px;white-space:pre;animation:rise .15s var(--in)}
 label{color:var(--mut);display:flex;gap:6px;align-items:center}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}}@keyframes pulse{50%{opacity:.25}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 ${SKIN_CSS}
-@media(max-width:800px){body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto}header,#dock{grid-column:1/-1}header{flex-wrap:wrap;gap:8px 12px}#dock{flex-wrap:wrap}#dock button{flex:1 1 auto}#side{border-right:0;border-bottom:1px solid var(--bd);max-height:34dvh}#bar{overflow-x:auto;flex-wrap:nowrap}}
+@media(max-width:800px){body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr)}header{flex-wrap:wrap;gap:8px 12px;padding:8px 12px}#side{max-height:26dvh;padding:0 10px 8px}#main{margin:0;border-radius:calc(var(--r)*1.5) calc(var(--r)*1.5) 0 0;border-bottom:0}#bar{overflow-x:auto;flex-wrap:nowrap}#dock{width:calc(100% - 16px);margin-bottom:8px}}
 </style></head><body>
 <header><b>RCODE</b><span>center</span><select id="engine" title="Who does the work"><option value="rcode">rcode</option><option value="claude">Claude plan</option><option value="codex">Codex plan</option><option value="agent">Any agent</option></select><input id="agentcmd" placeholder="grok acp" title="Command that speaks the Agent Client Protocol" style="display:none"><span id="cwd"></span></header>
 <nav id="side"></nav>
-<section id="main"><div id="bar"></div><div id="log"></div></section>
-<form id="dock"><textarea id="box" rows="1" placeholder="Ask, or queue it as a mission. Enter sends, Shift+Enter adds a line."></textarea><button class="acc" id="send">Send</button></form>
+<section id="main"><div id="bar"></div><div id="log"></div><div id="work">Working</div>
+<form id="dock"><textarea id="box" rows="1" placeholder="Ask, or queue it as a mission. Enter sends, Shift+Enter adds a line."></textarea><button class="acc" id="send">Send</button></form></section>
 <script>
 const q=new URLSearchParams(location.search), tok=q.get("token");
 const side=document.getElementById("side"), log=document.getElementById("log"), bar=document.getElementById("bar"), box=document.getElementById("box");
@@ -476,7 +488,7 @@ function paint(){
   if(!devices.length)side.appendChild(el("div","chip","None yet. Look checks Xcode and adb."));
   for(const d of devices){const row=el("div","item");row.append(el("div",null,d.name+(d.state&&d.state!=="Booted"?" · off":"")));if(d.state&&d.state!=="Booted"){const start=el("button",null,"Start");start.onclick=ev=>{ev.stopPropagation();ws.send(JSON.stringify({type:"device",action:"boot",id:d.id,kind:d.kind}))};row.appendChild(start)}else{const w=el("button",null,"Watch");w.onclick=ev=>{ev.stopPropagation();watchDevice(d)};row.appendChild(w)}side.appendChild(row)}
   bar.replaceChildren();
-  const t=thread();
+  const t=thread();document.body.classList.toggle("busy",!!(t&&t.running));
   if(!t){bar.appendChild(el("span","chip","Start a thread, or open a recent one."));return}
   if(t.guest){bar.appendChild(el("span","chip",t.model+" · its own tools, outside rcode's checks"));const stop=el("button",null,"Stop");stop.onclick=()=>ws.send(JSON.stringify({type:"stop",thread:t.id}));bar.appendChild(stop);return}
   for(const ref of models){const b=el("button",null,ref.replace("claude-cli/","claude "));if(t.model===ref)b.className="acc";b.onclick=()=>ws.send(JSON.stringify({type:"model",thread:t.id,ref:ref}));bar.appendChild(b)}
@@ -489,7 +501,8 @@ function paint(){
   bar.appendChild(el("span","chip","$"+Number(t.cost||0).toFixed(3)));
   const stop=el("button",null,"Stop");stop.onclick=()=>ws.send(JSON.stringify({type:"stop",thread:t.id}));bar.appendChild(stop);
 }
-function drawVisuals(node){if(node.dataset.drew)return;const raw=node.textContent;if(!raw.includes("\`\`\`html\\n"))return;node.dataset.drew="1";const htmls=[];const prose=raw.replace(/\`\`\`html\\n([\\s\\S]*?)\`\`\`/g,(_,h)=>{htmls.push(h);return ""}).replace(/\\n{3,}/g,"\\n\\n").trim();node.textContent=prose;for(const html of htmls.slice(0,3)){const f=document.createElement("iframe");f.className="visual";f.setAttribute("sandbox","allow-scripts");f.srcdoc='<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \\'none\\'; img-src data: blob:; style-src \\'unsafe-inline\\'; script-src \\'unsafe-inline\\'; font-src data:"></head><body>'+html+"</body></html>";node.appendChild(f)}}
+function drawVisuals(node){if(node.dataset.drew)return;const raw=node.textContent;if(!raw.includes("\`\`\`html\\n"))return;node.dataset.drew="1";const htmls=[];const prose=raw.replace(/\`\`\`html\\n([\\s\\S]*?)\`\`\`/g,(_,h)=>{htmls.push(h);return ""}).replace(/\\n{3,}/g,"\\n\\n").trim();node.textContent=prose;for(const html of htmls.slice(0,3)){const f=document.createElement("iframe");f.className="visual";f.setAttribute("sandbox","allow-scripts");f.srcdoc='<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \\'none\\'; img-src data: blob:; style-src \\'unsafe-inline\\'; script-src \\'unsafe-inline\\'; font-src data:"><style>body{margin:0;padding:12px;color:#18181b;font:14px/1.5 system-ui,sans-serif}</style></head><body>'+html+'<script>new ResizeObserver(()=>parent.postMessage({rcodeH:document.body.getBoundingClientRect().bottom},"*")).observe(document.body)<\\/script></body></html>';node.appendChild(f)}}
+addEventListener("message",e=>{const h=e.data&&e.data.rcodeH;if(typeof h!=="number")return;for(const f of document.querySelectorAll("iframe.visual"))if(f.contentWindow===e.source)f.style.height=Math.min(640,Math.max(32,Math.ceil(h)))+"px"});
 function conn(){
   ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws?token="+encodeURIComponent(tok));
   ws.onmessage=e=>{const m=JSON.parse(e.data);

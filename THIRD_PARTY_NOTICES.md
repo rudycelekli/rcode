@@ -81,6 +81,13 @@ Where a built-in file draws on a specific project, a credit line at the end of t
 - Copyright (c) T3 Tools Inc.
 - Used in: `src/center/desk.ts`. The simctl and adb argument lists follow `apps/server/src/device/DeviceActions.ts`. The off-network link uses `cloudflared`, the same tunnel program T3 Connect runs. Their Effect code, relay account, and desktop application were not copied.
 
+## rune
+
+- Repository: https://github.com/anomalyco/rune
+- License: MIT
+- Copyright (c) Anomaly
+- Used in: `src/modes/center.ts` and `src/center/skins.ts`. The default "Rune" skin and the command center layout follow Rune's design tokens (`site/src/system/tokens.css`: black canvas, hairlines, one red ink accent, 4 px grid, 8 px radius, 150 ms `cubic-bezier(.2,.8,.2,1)` enter) and its opencode demo layout. No Rust code or fonts were copied.
+
 ## MIT License (applies to the MIT-licensed projects above)
 
 ```

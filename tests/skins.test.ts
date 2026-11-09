@@ -7,12 +7,12 @@ import { SKINS, cleanSkin, skinScript } from "../src/center/skins.ts";
 describe("skins", () => {
   test("a pasted skin keeps colors and numbers, and nothing that could run", () => {
     const s = cleanSkin({ name: "Mine</style><script>", bg: "red;}body{display:none", acc: "#ABCDEF", size: 99, radius: -4, density: "110", font: "comic", fx: "glow", evil: "x" });
-    expect(s.bg).toBe("#0c0c0e");
+    expect(s.bg).toBe("#000000");
     expect(s.acc).toBe("#abcdef");
     expect(s.size).toBe(18);
     expect(s.radius).toBe(0);
     expect(s.density).toBe(110);
-    expect(s.font).toBe("sans");
+    expect(s.font).toBe("geist");
     expect(s.fx).toBe("glow");
     expect(s.name).toBe("Minestylescript");
     expect("evil" in s).toBe(false);
@@ -39,7 +39,7 @@ describe("skins", () => {
       const page = await (await fetch(c.url)).text();
       expect(page).toContain("Paste skin");
       expect(page).toContain("--onacc");
-      const script = page.split("<script>")[1]!.split("</script>")[0]!;
+      const script = page.slice(page.indexOf("<script>") + 8, page.lastIndexOf("</script>"));
       expect(() => new Function(script)).not.toThrow();
     } finally { c.stop(); }
   });
