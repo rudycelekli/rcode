@@ -20,7 +20,7 @@ import { keyProvider, starterIdeas, WELCOME } from "../core/welcome.ts";
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MODES: PermissionMode[] = ["ask", "auto-edit", "full", "plan"];
-const NOARG = new Set(["help", "undo", "plan", "new", "fork", "rewind", "cost", "context", "mcp", "tools", "skills", "agents", "commands", "export", "copy", "clear", "quit", "resume", "model", "thinking", "mode", "memory", "receipt"]);
+const NOARG = new Set(["help", "undo", "plan", "plain", "new", "fork", "rewind", "cost", "context", "mcp", "tools", "skills", "agents", "commands", "export", "copy", "clear", "quit", "resume", "model", "thinking", "mode", "memory", "receipt"]);
 const THINK: ThinkingLevel[] = ["off", "low", "medium", "high", "xhigh", "max"];
 
 interface RunningTool { id: string; name: string; summary: string; started: number; tail?: string }
@@ -31,6 +31,7 @@ const BUILTINS: Array<[string, string]> = [
   ["mode", "Approval mode: ask|auto-edit|full|plan"], ["plan", "Toggle plan mode (read-only)"], ["guard", "Toggle guards: freeze-tests | no-skip | strict-tdd"], ["goal", "Set a goal the agent must reach before stopping"],
   ["compact", "Summarize older context: /compact [focus]"], ["new", "Start a fresh session"], ["resume", "Resume a recent session"], ["fork", "Fork this session into a new branch file"],
   ["rewind", "Undo the last exchange (keeps it in the session tree)"], ["undo", "Revert file edits from the last turn that changed files"], ["cost", "Token usage and cost"], ["receipt", "Hash-chained proof of the last turn"], ["context", "Where the context window goes (by section, tool, message type)"], ["mcp", "MCP server status"],
+  ["plain", "Plain-language mode for non-programmers: /plain [on|off]"],
   ["hire", "Add a teammate from one sentence: /hire a reviewer who checks accessibility"], ["teach", "Turn what we just did into a reusable workflow: /teach <name>"],
   ["memory", "Search memory: /memory <query>"], ["remember", "Save a memory: /remember <text>"], ["forget", "Delete a memory: /forget <id>"], ["promote", "Promote memories to AGENTS.md: /promote <id…>"], ["tools", "List available tools"], ["skills", "List skills"],
   ["agents", "List subagent types"], ["commands", "List slash commands"], ["export", "Export transcript to markdown"], ["copy", "Copy last answer to clipboard"], ["clear", "Clear screen"], ["quit", "Exit"],
@@ -265,6 +266,13 @@ export async function runInteractive(opts: SessionOptions, initialPrompt?: strin
         if (GUARDS.includes(arg as any)) session.guards.toggle(arg as any);
         else if (arg) { say(a.red(`unknown guard ${arg} (${GUARDS.join(" | ")})`)); return true; }
         say(a.gray(`guards: ${session.guards.list().join(", ") || "none"}`));
+        return true;
+      }
+      case "plain": {
+        const on = arg === "" ? !session.plain : arg === "on";
+        if (arg && !["on", "off"].includes(arg)) { say(a.red("usage: /plain [on|off]")); return true; }
+        session.setPlain(on);
+        say(a.gray(on ? "plain mode on: everyday words, a 'what changed' summary after edits, and a yes before anything is overwritten" : "plain mode off"));
         return true;
       }
       case "plan": session.setMode(session.mode === "plan" ? "auto-edit" : "plan"); say(a.gray(`mode → ${session.mode}`)); return true;

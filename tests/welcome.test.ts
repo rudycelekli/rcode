@@ -44,6 +44,27 @@ describe("zero-config start", () => {
   });
 });
 
+describe("plain mode", () => {
+  test("toggles the plain-language manners into the system prompt, live and from the start", async () => {
+    const { AgentSession } = await import("../src/core/session.ts");
+    const { PLAIN_MODE } = await import("../src/core/plain.ts");
+    fauxReset();
+    const d = tmp();
+    const off = await new AgentSession({ cwd: d, model: "faux/test", minimal: true, ephemeral: true }).init();
+    expect(off.agent.config.systemPrompt).not.toContain("# Plain mode");
+    off.setPlain(true);
+    expect(off.plain).toBe(true);
+    expect(off.agent.config.systemPrompt).toContain(PLAIN_MODE);
+    off.setPlain(false);
+    expect(off.agent.config.systemPrompt).not.toContain("# Plain mode");
+    await off.dispose();
+
+    const on = await new AgentSession({ cwd: d, model: "faux/test", minimal: true, ephemeral: true, plain: true }).init();
+    expect(on.agent.config.systemPrompt).toContain("What changed");
+    await on.dispose();
+  });
+});
+
 describe("hire and teach", () => {
   test("helpers: json extraction, slugs, safe names, unique files", () => {
     expect(firstJson('Sure!\n```json\n{"a": 1}\n```')).toEqual({ a: 1 });

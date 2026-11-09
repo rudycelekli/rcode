@@ -11,6 +11,7 @@ import type { Message, Model, ThinkingLevel, UserContent } from "../ai/types.ts"
 import { loadAuth, loadConfig, saveAuth, type RcodeConfig } from "../config.ts";
 import { hasCloudKey, localStartModel } from "./welcome.ts";
 import { hireTeammate, teachWorkflow } from "./teach.ts";
+import { PLAIN_MODE } from "./plain.ts";
 import "../config-surface.ts";
 import { buildSystemPrompt, environmentBlock } from "../context/system-prompt.ts";
 import { expandCommand, setClaudeHomeImport, loadAgents, loadCommands, loadSkills, type AgentDef, type Command, type Skill } from "../ext/resources.ts";
@@ -53,6 +54,8 @@ export interface SessionOptions {
   tools?: string[];
   systemPromptAppend?: string;
   maxTurns?: number;
+  /** Plain-language manners for non-programmers (see core/plain.ts). */
+  plain?: boolean;
 }
 
 export class AgentSession {
@@ -90,6 +93,7 @@ export class AgentSession {
   private promptId = "";
   /** True when no key and no local model server were found: the frontend should welcome, not error. */
   needsModel = false;
+  plain = false;
 
   constructor(readonly opts: SessionOptions) {}
 
@@ -101,6 +105,7 @@ export class AgentSession {
     this.config = loadConfig(o.cwd);
     this.auth = loadAuth();
     this.thinking = o.thinking ?? this.config.thinking ?? "medium";
+    this.plain = !!o.plain;
     this.compaction = { ...DEFAULT_COMPACTION, ...this.config.compaction };
     let ref = o.model ?? this.config.model;
     if (!ref && !hasCloudKey(this.auth)) {
@@ -221,7 +226,7 @@ export class AgentSession {
     this.agent.config.tools = tools;
     this.agent.config.systemPrompt = buildSystemPrompt({
       cwd: this.cwd, tools, skills: this.skills, mode: this.policy.mode === "plan" ? "plan" : "default",
-      extra: this.opts.systemPromptAppend || undefined,
+      extra: [this.plain ? PLAIN_MODE : "", this.opts.systemPromptAppend].filter(Boolean).join("\n\n") || undefined,
       env: this.envBlock,
       memory: this.memoryBlock,
     });
@@ -383,6 +388,8 @@ export class AgentSession {
     this.commands = loadCommands(this.cwd, [...(this.config.paths?.commands ?? []), ...(dir ? [dir] : [])]);
     return r;
   }
+
+  setPlain(on: boolean) { this.plain = on; this.refreshTools(); }
 
   setThinking(t: ThinkingLevel) { this.thinking = t; this.agent.config.thinking = t; this.session.setMeta({ thinking: t }); }
   setMode(mode: PermissionMode) { this.policy.mode = mode; this.applySandbox(); this.refreshTools(); }

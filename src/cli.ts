@@ -37,6 +37,8 @@ Usage:
   rcode handoff [file]           Print a resume brief (or write it when a path is given)
   rcode queue [add|run|list]     Queue tasks and work through them unattended (survives crashes)
 
+  --plain                        Plain-language mode for non-programmers (toggle in chat with /plain)
+
 Options:
   -m, --model <ref>              provider/model or alias (opus, sonnet, haiku, gpt5, gemini, ollama/qwen3-coder)
   -t, --thinking <level>         off|minimal|low|medium|high|xhigh|max
@@ -72,7 +74,7 @@ async function main() {
       model: { type: "string", short: "m" }, thinking: { type: "string", short: "t" },
       continue: { type: "boolean", short: "c" }, resume: { type: "string", short: "r" },
       plan: { type: "boolean" }, yes: { type: "boolean", short: "y" }, "auto-edit": { type: "boolean" },
-      tools: { type: "string" }, minimal: { type: "boolean" }, "no-session": { type: "boolean" },
+      tools: { type: "string" }, minimal: { type: "boolean" }, plain: { type: "boolean" }, "no-session": { type: "boolean" },
       user: { type: "boolean" }, cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
       version: { type: "boolean", short: "v" }, help: { type: "boolean", short: "h" },
     },
@@ -106,6 +108,7 @@ async function main() {
     resume: values.continue ? ("continue" as const) : (values.resume as string | undefined),
     ephemeral: !!values["no-session"],
     minimal: !!values.minimal,
+    plain: !!values.plain,
     tools: (values.tools as string | undefined)?.split(","),
   };
 
