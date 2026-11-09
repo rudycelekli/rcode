@@ -20,6 +20,8 @@ import { runSessionJob } from "./queue.ts";
 import { GUEST_NOTE, runGuest, type GuestEngine } from "../center/guests.ts";
 import { runAcpGuest, splitCommand } from "../center/acp-guest.ts";
 import { addWorktree, claudePlanUsage, codexThreadCount, deviceShot, githubPullRequest, lanHosts, listDevices, saveSpill, spillPaste, turnDiff } from "../center/studio.ts";
+import { deviceArgv, startShare } from "../center/desk.ts";
+import { spawnSync } from "node:child_process";
 
 function composePrompt(text: string, file?: { name?: string; text?: string }): string {
   const spill = spillPaste(text);
@@ -43,6 +45,8 @@ export interface CenterOptions {
   cwd: string;
   port?: number;
   host?: string;
+  /** Open a cloudflared link so a device off this network can reach the page. */
+  share?: boolean;
   token?: string;
   model?: string;
   /** Override the queue file. Tests use this so they never touch ~/.rcode. */
@@ -97,6 +101,7 @@ export async function startCenter(opts: CenterOptions) {
   const approvals = new Map<string, (d: "allow" | "allow-session" | "deny") => void>();
   const sockets = new Set<Sock>();
   let queueRunning = false;
+  let share: { url: Promise<string>; stop: () => void } | undefined;
 
   const send = (ws: Sock, msg: unknown) => { try { ws.send(JSON.stringify(msg)); } catch {} };
   const broadcast = (msg: unknown) => { for (const ws of sockets) send(ws, msg); };
@@ -240,6 +245,12 @@ export async function startCenter(opts: CenterOptions) {
     fetch(req, srv) {
       const url = new URL(req.url);
       if (url.pathname === "/manifest.webmanifest") return new Response(JSON.stringify({ name: "rcode center", short_name: "rcode", display: "standalone", start_url: "/", background_color: "#0c0c0e", theme_color: "#0c0c0e" }), { headers: { "content-type": "application/manifest+json" } });
+      if (url.pathname === "/device/frame") {
+        if (!authed(token, url.searchParams.get("token"))) return new Response("unauthorized", { status: 401 });
+        const shot = deviceShot(url.searchParams.get("kind") ?? "", url.searchParams.get("id") ?? "");
+        if ("error" in shot) return new Response(shot.error, { status: 404 });
+        return new Response(Buffer.from(shot.png, "base64"), { headers: { "content-type": "image/png", "cache-control": "no-store" } });
+      }
       if (!authed(token, url.searchParams.get("token"))) return new Response("rcode center: unauthorized", { status: 401 });
       if (url.pathname === "/ws") {
         const origin = req.headers.get("origin");
@@ -329,6 +340,20 @@ export async function startCenter(opts: CenterOptions) {
             return;
           }
           if (m.type === "devices") { send(ws, { type: "devices", list: listDevices() }); return; }
+          if (m.type === "share") {
+            share ??= startShare(server.port ?? 0);
+            share.url.then((u) => send(ws, { type: "note", text: `Open this on another device. Cloudflare carries the link, and anyone who has it can drive the agent.\n${u}/?token=${token}` })).catch((e) => send(ws, { type: "note", text: (e as Error).message, level: "error" }));
+            return;
+          }
+          if (m.type === "device" && typeof m.action === "string") {
+            const argv = deviceArgv(m.action, { id: String(m.id ?? ""), kind: m.kind === "android" ? "android" : "ios" }, typeof m.x === "number" ? { x: m.x, y: Number(m.y) } : undefined);
+            if ("error" in argv) { send(ws, { type: "note", text: argv.error, level: "warn" }); return; }
+            const [cmd, ...args] = argv;
+            const r = spawnSync(cmd!, args, { encoding: "utf8", timeout: m.action === "boot" ? 45_000 : 8_000 });
+            send(ws, { type: "note", text: r.status === 0 ? `${m.action} done.` : (r.stderr || r.stdout || `${m.action} failed.`).trim().slice(0, 300), level: r.status === 0 ? "info" : "warn" });
+            if (m.action === "boot" || m.action === "shutdown") send(ws, { type: "devices", list: listDevices() });
+            return;
+          }
           if (m.type === "shot") {
             const shot = deviceShot(String(m.kind), String(m.id));
             send(ws, "png" in shot ? { type: "shot", png: shot.png } : { type: "note", text: shot.error, level: "warn" });
@@ -355,10 +380,15 @@ export async function startCenter(opts: CenterOptions) {
   });
 
   const shownHost = host === "0.0.0.0" ? "localhost" : host;
-  const url = `http://${shownHost}:${server.port}/?token=${token}`;
+  const port = server.port ?? 0;
+  const url = `http://${shownHost}:${port}/?token=${token}`;
+  if (opts.share) {
+    share = startShare(port);
+    share.url.then((u) => console.log(`  Off this network: ${u}/?token=${token}\n  Cloudflare carries that link. Anyone who has it can drive the agent.`)).catch((e) => console.log(`  Share failed: ${(e as Error).message}`));
+  }
   return {
-    url, token, port: server.port,
-    stop: () => { server.stop(true); for (const s of threads.values()) void s.dispose(); for (const g of guests.values()) g.stop?.(); },
+    url, token, port,
+    stop: () => { share?.stop(); server.stop(true); for (const s of threads.values()) void s.dispose(); for (const g of guests.values()) g.stop?.(); },
   };
 }
 
@@ -407,7 +437,8 @@ label{color:var(--mut);display:flex;gap:6px;align-items:center}
 <script>
 const q=new URLSearchParams(location.search), tok=q.get("token");
 const side=document.getElementById("side"), log=document.getElementById("log"), bar=document.getElementById("bar"), box=document.getElementById("box");
-let ws, active=null, threads=[], recent=[], jobs=[], queueRunning=false, models=[], usage={claude:[],codex:0}, lan=[], devices=[], attached=null;
+let ws, active=null, threads=[], recent=[], jobs=[], queueRunning=false, models=[], usage={claude:[],codex:0}, lan=[], devices=[], attached=null, watching=null, watchTimer=0;
+function watchDevice(d){watching=d;let img=document.getElementById("screen");if(!img){img=document.createElement("img");img.id="screen";img.alt="device";img.style.maxWidth="320px";img.style.borderRadius="10px";img.style.cursor="crosshair";log.appendChild(img);img.onclick=ev=>{const r=img.getBoundingClientRect();const x=Math.round((ev.clientX-r.left)/r.width*img.naturalWidth);const y=Math.round((ev.clientY-r.top)/r.height*img.naturalHeight);ws.send(JSON.stringify({type:"device",action:"tap",id:watching.id,kind:watching.kind,x,y}))};const keys=el("div");for(const [action,label] of [["home","Home"],["back","Back"]]){const b=el("button",null,label);b.onclick=()=>ws.send(JSON.stringify({type:"device",action,id:watching.id,kind:watching.kind}));keys.appendChild(b)}log.appendChild(keys)}clearInterval(watchTimer);const tick=()=>{if(!watching)return;img.src="/device/frame?token="+encodeURIComponent(tok)+"&id="+encodeURIComponent(watching.id)+"&kind="+watching.kind+"&t="+Date.now()};tick();watchTimer=setInterval(tick,900)}
 const view={};
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}
 function focus(id,messages){active=id;view[id]=messages||view[id]||[];paint();if(messages){log.replaceChildren();for(const m of messages)addLine(m.role==="user"?"you":"m",m.text)}}
@@ -437,8 +468,8 @@ function paint(){
   side.appendChild(el("div","chip","Codex threads: "+(usage.codex||0)));
   side.appendChild(el("h3",null,"Devices"));
   const look=el("button",null,"Look for phones");look.onclick=()=>ws.send(JSON.stringify({type:"devices"}));side.appendChild(look);
-  if(!devices.length)side.appendChild(el("div","chip","Nothing booted. rcode does not start one."));
-  for(const d of devices){const row=el("div","item");row.append(el("div",null,d.name));const shot=el("button",null,"Shot");shot.onclick=ev=>{ev.stopPropagation();ws.send(JSON.stringify({type:"shot",id:d.id,kind:d.kind}))};row.appendChild(shot);side.appendChild(row)}
+  if(!devices.length)side.appendChild(el("div","chip","None yet. Look checks Xcode and adb."));
+  for(const d of devices){const row=el("div","item");row.append(el("div",null,d.name+(d.state&&d.state!=="Booted"?" · off":"")));if(d.state&&d.state!=="Booted"){const start=el("button",null,"Start");start.onclick=ev=>{ev.stopPropagation();ws.send(JSON.stringify({type:"device",action:"boot",id:d.id,kind:d.kind}))};row.appendChild(start)}else{const w=el("button",null,"Watch");w.onclick=ev=>{ev.stopPropagation();watchDevice(d)};row.appendChild(w)}side.appendChild(row)}
   bar.replaceChildren();
   const t=thread();
   if(!t){bar.appendChild(el("span","chip","Start a thread, or open a recent one."));return}
@@ -492,4 +523,5 @@ const attach=el("button",null,"Attach");attach.type="button";attach.onclick=()=>
 file.onchange=()=>{const f=file.files&&file.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{attached={name:f.name,text:String(rd.result||"")};attach.textContent=f.name.slice(0,18)};rd.readAsText(f)};
 const quote=el("button",null,"Quote");quote.type="button";quote.onclick=()=>{const lines=[...log.querySelectorAll(".m:not(.you)")];const last=lines[lines.length-1];if(!last)return;box.value="> "+last.childNodes[0]&&last.childNodes[0].textContent?last.childNodes[0].textContent.trim().split("\\n").join("\\n> "):last.textContent.trim().split("\\n").join("\\n> ");box.value+="\\n"};
 document.getElementById("dock").append(queueBtn,mic,attach,file,quote);
+const shareBtn=el("button",null,"Share");shareBtn.title="A link for a device that is not on this network. Cloudflare carries it.";shareBtn.onclick=()=>ws&&ws.send(JSON.stringify({type:"share"}));document.querySelector("header").appendChild(shareBtn);
 </script></body></html>`;

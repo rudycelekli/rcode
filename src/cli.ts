@@ -9,6 +9,7 @@
  *   rcode setup | doctor | models | sessions | login | mcp
  */
 import { parseArgs } from "node:util";
+import { fileURLToPath } from "node:url";
 import { fstatSync, readFileSync } from "node:fs";
 import { AgentSession } from "./core/session.ts";
 import type { PermissionMode } from "./permissions/policy.ts";
@@ -33,7 +34,8 @@ Usage:
   rcode login <provider> [key]   Store an API key (anthropic, openai, google, openrouter, telegram, …)
   rcode update                   Update to the latest release (compiled binary)
   rcode gateway                  Talk to rcode from your phone: Telegram + web UI (pair/install/uninstall)
-  rcode center [--lan]           Local command center: threads, missions, receipts. --lan shares it on your network
+  rcode center [--lan] [--share] Local command center. --lan is your network. --share is a cloudflared link off it
+  rcode app                      Install a double-clickable Rcode app that opens the center
   rcode eval <suite.json>        Run a deterministic eval suite (Wilson 95% CI)
   rcode handoff [file]           Print a resume brief (or write it when a path is given)
   rcode queue [add|run|list]     Queue tasks and work through them unattended (survives crashes)
@@ -76,7 +78,7 @@ async function main() {
       continue: { type: "boolean", short: "c" }, resume: { type: "string", short: "r" },
       plan: { type: "boolean" }, yes: { type: "boolean", short: "y" }, "auto-edit": { type: "boolean" },
       tools: { type: "string" }, minimal: { type: "boolean" }, plain: { type: "boolean" }, "no-session": { type: "boolean" },
-      user: { type: "boolean" }, cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, lan: { type: "boolean" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
+      user: { type: "boolean" }, cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, lan: { type: "boolean" }, share: { type: "boolean" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
       version: { type: "boolean", short: "v" }, help: { type: "boolean", short: "h" },
     },
   });
@@ -89,7 +91,17 @@ async function main() {
   const sub = positionals[0];
   if (sub === "center" && !values.print) {
     const { runCenter } = await import("./modes/center.ts");
-    return runCenter({ cwd, port: values.port ? Number(values.port) : undefined, host: (values.host as string | undefined) ?? (values.lan ? "0.0.0.0" : undefined), model: values.model as string | undefined });
+    return runCenter({ cwd, port: values.port ? Number(values.port) : undefined, host: (values.host as string | undefined) ?? (values.lan ? "0.0.0.0" : undefined), share: !!values.share, model: values.model as string | undefined });
+  }
+  if (sub === "app" && !values.print) {
+    const { writeDesktopApp } = await import("./center/desk.ts");
+    const { homedir } = await import("node:os");
+    const { join } = await import("node:path");
+    const compiled = !/\/bun(\.exe)?$/.test(process.execPath);
+    const dest = process.platform === "darwin" ? join(homedir(), "Applications", "Rcode.app") : join(homedir(), ".local", "share", "applications");
+    const path = writeDesktopApp({ exe: process.execPath, args: compiled ? ["center"] : [fileURLToPath(new URL("./cli.ts", import.meta.url)), "center"], dest });
+    console.log(`Installed ${path}\nOpen Rcode. It starts the center on this computer. Press Share in the page for a link that works off your network.`);
+    return 0;
   }
   if (sub === "queue" && !values.print) {
     const { runQueue } = await import("./modes/queue.ts");

@@ -74,6 +74,13 @@ Where a built-in file draws on a specific project, a credit line at the end of t
 - License: MIT
 - Used in: the local telemetry record's field names (`event.action`, `session.id`, `prompt.id`, `harness.name`, `gen_ai.tool.call.id`, `command.command`, `file.path`). rcode's threat rules are original; Beacon's rule corpus is not included.
 
+## t3code
+
+- Repository: https://github.com/pingdotgg/t3code
+- License: MIT
+- Copyright (c) T3 Tools Inc.
+- Used in: `src/center/desk.ts`. The simctl and adb argument lists follow `apps/server/src/device/DeviceActions.ts`. The off-network link uses `cloudflared`, the same tunnel program T3 Connect runs. Their Effect code, relay account, and desktop application were not copied.
+
 ## MIT License (applies to the MIT-licensed projects above)
 
 ```

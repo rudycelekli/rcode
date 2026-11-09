@@ -72,15 +72,24 @@ export function addWorktree(cwd: string, name: string): { ok: true; path: string
 
 export interface Device { id: string; name: string; kind: "ios" | "android" }
 
-export function parseSimctl(raw: string): Device[] {
+function simctlDevices(raw: string, states: string[]): Array<Device & { state: string }> {
   try {
     const devices = JSON.parse(raw).devices ?? {};
-    const out: Device[] = [];
+    const out: Array<Device & { state: string }> = [];
     for (const list of Object.values(devices) as Array<Array<{ state?: string; udid?: string; name?: string }>>) {
-      for (const d of list ?? []) if (d?.state === "Booted" && d.udid) out.push({ id: String(d.udid), name: String(d.name ?? "iPhone"), kind: "ios" });
+      for (const d of list ?? []) if (d?.udid && d.state && states.includes(d.state)) out.push({ id: String(d.udid), name: String(d.name ?? "iPhone"), kind: "ios", state: d.state });
     }
     return out;
   } catch { return []; }
+}
+
+export function parseSimctl(raw: string): Device[] {
+  return simctlDevices(raw, ["Booted"]);
+}
+
+/** Booted and shut-down simulators, so the page can start one. */
+export function parseSimctlAll(raw: string): Array<Device & { state: string }> {
+  return simctlDevices(raw, ["Booted", "Shutdown"]);
 }
 
 export function parseAdb(raw: string): Device[] {
@@ -97,9 +106,11 @@ function run(cmd: string, args: string[], ms = 2_000): string {
   } catch { return ""; }
 }
 
-/** Simulators and phones that are already on. Nothing is booted from here. */
-export function listDevices(): Device[] {
-  return [...parseSimctl(run("xcrun", ["simctl", "list", "devices", "booted", "-j"])), ...parseAdb(run("adb", ["devices"]))];
+/** Simulators Xcode knows about, plus phones adb already lists. */
+export function listDevices(): Array<Device & { state?: string }> {
+  const ios = parseSimctlAll(run("xcrun", ["simctl", "list", "devices", "-j"])).slice(0, 12);
+  const android = parseAdb(run("adb", ["devices"])).map((d) => ({ ...d, state: "Booted" }));
+  return [...ios, ...android];
 }
 
 const DEVICE_ID = /^[A-Za-z0-9:._-]{1,80}$/;
