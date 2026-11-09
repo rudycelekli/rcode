@@ -8,6 +8,9 @@
  * Binds 127.0.0.1. The page and the socket both require the token printed at startup.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { AgentEvent } from "../agent/types.ts";
 import type { ServerWebSocket } from "bun";
 import { AgentSession } from "../core/session.ts";
@@ -16,6 +19,23 @@ import { listSessions } from "../session/store.ts";
 import { runSessionJob } from "./queue.ts";
 import { GUEST_NOTE, runGuest, type GuestEngine } from "../center/guests.ts";
 import { runAcpGuest, splitCommand } from "../center/acp-guest.ts";
+import { addWorktree, claudePlanUsage, codexThreadCount, deviceShot, githubPullRequest, lanHosts, listDevices, saveSpill, spillPaste, turnDiff } from "../center/studio.ts";
+
+function composePrompt(text: string, file?: { name?: string; text?: string }): string {
+  const spill = spillPaste(text);
+  let out = spill.keep;
+  if (spill.spill) out += `\n\nThe rest of the message is in ${saveSpill(spill.spill, "paste.txt")}. Read that file.`;
+  if (typeof file?.text === "string" && file.text) out += `\n\nAttached ${file.name || "file"} is in ${saveSpill(String(file.text).slice(0, 200_000), String(file.name || "file.txt"))}. Read that file.`;
+  return out;
+}
+
+function planUsage() {
+  let claude: ReturnType<typeof claudePlanUsage> = [];
+  let codex = 0;
+  try { claude = claudePlanUsage(readFileSync(join(homedir(), ".claude", "stats-cache.json"), "utf8")); } catch { /* no local Claude stats */ }
+  try { codex = codexThreadCount(readFileSync(join(homedir(), ".codex", "session_index.jsonl"), "utf8")); } catch { /* no local Codex index */ }
+  return { claude, codex };
+}
 
 type Sock = ServerWebSocket<{ id: string }>;
 
@@ -219,20 +239,21 @@ export async function startCenter(opts: CenterOptions) {
     hostname: host,
     fetch(req, srv) {
       const url = new URL(req.url);
+      if (url.pathname === "/manifest.webmanifest") return new Response(JSON.stringify({ name: "rcode center", short_name: "rcode", display: "standalone", start_url: "/", background_color: "#0c0c0e", theme_color: "#0c0c0e" }), { headers: { "content-type": "application/manifest+json" } });
       if (!authed(token, url.searchParams.get("token"))) return new Response("rcode center: unauthorized", { status: 401 });
       if (url.pathname === "/ws") {
         const origin = req.headers.get("origin");
         if (origin && new URL(origin).host !== req.headers.get("host")) return new Response("bad origin", { status: 403 });
         return srv.upgrade(req, { data: { id: randomBytes(4).toString("hex") } }) ? undefined : new Response("upgrade failed", { status: 400 });
       }
-      return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:" } });
+      return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:" } });
     },
     websocket: {
       open(ws: Sock) {
         sockets.add(ws);
         const live: object[] = [...threads.values()].map(stateOf);
         live.push(...[...guests.values()].map(guestState));
-        send(ws, { type: "ready", cwd: opts.cwd, models: MODELS, recent: recent(), jobs: jobs(), threads: live });
+        send(ws, { type: "ready", cwd: opts.cwd, models: MODELS, recent: recent(), jobs: jobs(), threads: live, usage: planUsage(), lan: host === "0.0.0.0" ? lanHosts() : [] });
       },
       close(ws: Sock) { sockets.delete(ws); },
       async message(ws: Sock, raw) {
@@ -257,7 +278,8 @@ export async function startCenter(opts: CenterOptions) {
           }
           if (m.type === "prompt" && typeof m.text === "string" && m.text.trim()) {
             const engine = engineOf(m.engine);
-            const text = m.text.trim();
+            const typed = m.text.trim();
+            const text = composePrompt(typed, m.file);
             if (engine === "agent") {
               const argv = splitCommand(String(m.command ?? ""));
               if (!argv.length) { send(ws, { type: "note", text: "Type the agent command first. Example: grok acp", level: "warn" }); return; }
@@ -273,8 +295,11 @@ export async function startCenter(opts: CenterOptions) {
             const s = (m.thread && threads.get(m.thread)) || await open();
             if (!m.thread) send(ws, { type: "focus", id: s.session.id, messages: transcript(s) });
             if (s.needsModel) { broadcast({ type: "evt", thread: s.session.id, evt: { type: "note", level: "warn", text: "No model yet. Pick Claude (your plan) after `claude` → /login, or set a model." } }); return; }
-            broadcast({ type: "you", thread: s.session.id, text: m.text.trim().slice(0, 4000) });
-            await s.prompt(m.text);
+            broadcast({ type: "you", thread: s.session.id, text: typed.slice(0, 4000) });
+            await s.prompt(text);
+            const diff = turnDiff(opts.cwd, s.lastReceipt?.filesChanged ?? []);
+            if (diff) broadcast({ type: "evt", thread: s.session.id, evt: { type: "diff", text: diff, verdict: s.lastReceipt?.verdict ?? "" } });
+            broadcast({ type: "usage", usage: planUsage() });
             broadcast({ type: "thread", thread: stateOf(s) });
             return;
           }
@@ -288,6 +313,27 @@ export async function startCenter(opts: CenterOptions) {
             return;
           }
           if (m.type === "approval") { const fn = approvals.get(String(m.id)); if (fn) { approvals.delete(String(m.id)); fn(m.decision); } return; }
+          if (m.type === "undo" && s) {
+            const u = s.undo();
+            send(ws, { type: "note", text: u ? `Reverted ${u.files.length} file(s) from turn ${u.turn}.` : "Nothing to undo." });
+            return;
+          }
+          if (m.type === "pr") {
+            const pr = githubPullRequest(opts.cwd);
+            send(ws, { type: "note", text: pr.ok ? `Pull request: ${pr.url}` : pr.error });
+            return;
+          }
+          if (m.type === "worktree" && typeof m.name === "string") {
+            const made = addWorktree(opts.cwd, m.name.trim().toLowerCase());
+            send(ws, { type: "note", text: made.ok ? `A copy is ready at ${made.path}, on branch rcode/${m.name.trim().toLowerCase()}.` : made.error });
+            return;
+          }
+          if (m.type === "devices") { send(ws, { type: "devices", list: listDevices() }); return; }
+          if (m.type === "shot") {
+            const shot = deviceShot(String(m.kind), String(m.id));
+            send(ws, "png" in shot ? { type: "shot", png: shot.png } : { type: "note", text: shot.error, level: "warn" });
+            return;
+          }
           if (m.type === "queue-add" && typeof m.text === "string" && m.text.trim()) {
             file ? add(m.text, opts.cwd, file) : add(m.text, opts.cwd);
             pushQueue();
@@ -318,11 +364,14 @@ export async function startCenter(opts: CenterOptions) {
 
 export async function runCenter(opts: CenterOptions): Promise<number> {
   const c = await startCenter(opts);
-  console.log(`rcode center  ${c.url}\n  ${opts.cwd}\n  Ctrl+C to stop. This page stays on this computer.`);
+  const reach = opts.host === "0.0.0.0"
+    ? "This link works on your network. Anyone who has it can drive the agent. The link is the key."
+    : "This page stays on this computer. rcode center --lan opens it to your network.";
+  console.log(`rcode center  ${c.url}\n  ${opts.cwd}\n  ${reach}\n  Ctrl+C to stop.`);
   return new Promise(() => {});
 }
 
-const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0c0c0e"><link rel="manifest" href="/manifest.webmanifest">
 <title>rcode center</title><style>
 :root{--bg:#0c0c0e;--fg:#eceae6;--mut:#8d8d93;--acc:#ff8a3d;--ok:#7dcea0;--bad:#e06c75;--card:#151518;--bd:#2a2a30;--line:#222228}
 *{box-sizing:border-box}html,body{margin:0;height:100%}
@@ -346,7 +395,8 @@ h3{margin:14px 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercas
 .tool.ok{border-color:var(--ok)}.tool.fail{border-color:var(--bad);color:var(--bad)}
 .chip{font:12px/1 ui-monospace,Menlo,monospace;color:var(--mut)}
 .v-verified{color:var(--ok)}.v-failed,.v-unverified{color:var(--bad)}.v-read-only{color:var(--mut)}
-#empty{color:var(--mut);padding:24px 4px}
+iframe.visual{width:100%;height:260px;border:1px solid var(--bd);border-radius:10px;background:#fff}
+pre.diff{font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px;overflow:auto;max-height:240px;white-space:pre}
 label{color:var(--mut);display:flex;gap:6px;align-items:center}
 @media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto}#side{border-right:0;border-bottom:1px solid var(--bd);max-height:34dvh}}
 </style></head><body>
@@ -357,7 +407,7 @@ label{color:var(--mut);display:flex;gap:6px;align-items:center}
 <script>
 const q=new URLSearchParams(location.search), tok=q.get("token");
 const side=document.getElementById("side"), log=document.getElementById("log"), bar=document.getElementById("bar"), box=document.getElementById("box");
-let ws, active=null, threads=[], recent=[], jobs=[], queueRunning=false, models=[];
+let ws, active=null, threads=[], recent=[], jobs=[], queueRunning=false, models=[], usage={claude:[],codex:0}, lan=[], devices=[], attached=null;
 const view={};
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n}
 function focus(id,messages){active=id;view[id]=messages||view[id]||[];paint();if(messages){log.replaceChildren();for(const m of messages)addLine(m.role==="user"?"you":"m",m.text)}}
@@ -379,6 +429,16 @@ function paint(){
   side.appendChild(row);
   if(!jobs.length)side.appendChild(el("div","chip","Nothing queued. Queue adds work without sending it."));
   for(const j of jobs){const d=el("div","item");const mark=j.status==="done"?"✓":j.status==="failed"?"✗":j.status==="running"?"◐":"○";d.append(el("div",null,mark+" "+j.prompt.slice(0,80)));const sub=j.error||j.result||j.verdict||j.status;d.append(el("small",null,sub));side.appendChild(d)}
+  side.appendChild(el("h3",null,"Plans"));
+  const spent=threads.reduce((s,t)=>s+(t.guest?0:Number(t.cost)||0),0);
+  side.appendChild(el("div","chip","rcode $"+spent.toFixed(3)+" from receipts"));
+  if(!usage.claude.length)side.appendChild(el("div","chip","Claude plan: no local stats yet"));
+  for(const c of usage.claude.slice(0,3))side.appendChild(el("div","chip","claude "+String(c.model).slice(0,22)+" · "+Math.round((c.input+c.output)/1000)+"k"));
+  side.appendChild(el("div","chip","Codex threads: "+(usage.codex||0)));
+  side.appendChild(el("h3",null,"Devices"));
+  const look=el("button",null,"Look for phones");look.onclick=()=>ws.send(JSON.stringify({type:"devices"}));side.appendChild(look);
+  if(!devices.length)side.appendChild(el("div","chip","Nothing booted. rcode does not start one."));
+  for(const d of devices){const row=el("div","item");row.append(el("div",null,d.name));const shot=el("button",null,"Shot");shot.onclick=ev=>{ev.stopPropagation();ws.send(JSON.stringify({type:"shot",id:d.id,kind:d.kind}))};row.appendChild(shot);side.appendChild(row)}
   bar.replaceChildren();
   const t=thread();
   if(!t){bar.appendChild(el("span","chip","Start a thread, or open a recent one."));return}
@@ -387,13 +447,17 @@ function paint(){
   const sel=el("select");for(const mode of["ask","auto-edit","full","plan"]){const o=el("option",null,mode);o.value=mode;if(mode===t.mode)o.selected=true;sel.appendChild(o)}sel.onchange=()=>ws.send(JSON.stringify({type:"mode",thread:t.id,mode:sel.value}));bar.appendChild(sel);
   const plain=el("label");const cb=document.createElement("input");cb.type="checkbox";cb.checked=!!t.plain;cb.onchange=()=>ws.send(JSON.stringify({type:"plain",thread:t.id,on:cb.checked}));plain.append(cb,document.createTextNode("plain"));bar.appendChild(plain);
   if(t.receipt)bar.appendChild(el("span","chip v-"+t.receipt.verdict,t.receipt.verdict+" "+t.receipt.hash.slice(0,8)));
+  const undo=el("button",null,"Undo");undo.onclick=()=>ws.send(JSON.stringify({type:"undo",thread:t.id}));bar.appendChild(undo);
+  const copy=el("button",null,"Copy repo");copy.onclick=()=>{const name=prompt("Name this copy. Letters, numbers, dashes.","wip");if(name)ws.send(JSON.stringify({type:"worktree",name}))};bar.appendChild(copy);
+  const pr=el("button",null,"Pull request");pr.onclick=()=>ws.send(JSON.stringify({type:"pr",thread:t.id}));bar.appendChild(pr);
   bar.appendChild(el("span","chip","$"+Number(t.cost||0).toFixed(3)));
   const stop=el("button",null,"Stop");stop.onclick=()=>ws.send(JSON.stringify({type:"stop",thread:t.id}));bar.appendChild(stop);
 }
+function drawVisuals(node){if(node.dataset.drew)return;const parts=node.textContent.split("\`\`\`html\\n");if(parts.length<2)return;node.dataset.drew="1";for(let i=1;i<parts.length&&i<=3;i++){const html=parts[i].split("\`\`\`")[0];const f=document.createElement("iframe");f.className="visual";f.setAttribute("sandbox","allow-scripts");f.srcdoc='<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \\'none\\'; img-src data: blob:; style-src \\'unsafe-inline\\'; script-src \\'unsafe-inline\\'; font-src data:"></head><body>'+html+"</body></html>";node.appendChild(f)}}
 function conn(){
   ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws?token="+encodeURIComponent(tok));
   ws.onmessage=e=>{const m=JSON.parse(e.data);
-    if(m.type==="ready"){document.getElementById("cwd").textContent=m.cwd;models=m.models;recent=m.recent;jobs=m.jobs;threads=m.threads;queueRunning=false;paint();if(!log.childElementCount)log.appendChild(el("div","chip",m.cwd))}
+    if(m.type==="ready"){usage=m.usage||usage;lan=m.lan||[];document.getElementById("cwd").textContent=m.cwd+(lan.length?"  ·  "+lan.join(", "):"");models=m.models;recent=m.recent;jobs=m.jobs;threads=m.threads;queueRunning=false;paint();if(!log.childElementCount)log.appendChild(el("div","chip",m.cwd+(lan.length?"  ·  open on this network":"  ·  add to your home screen from the browser menu")))}
     else if(m.type==="focus")focus(m.id,m.messages);
     else if(m.type==="thread"){const i=threads.findIndex(t=>t.id===m.thread.id);if(i<0)threads.unshift(m.thread);else threads[i]=m.thread;if(!active)active=m.thread.id;paint()}
     else if(m.type==="you"&&m.thread===active)addLine("m you",m.text);
@@ -404,8 +468,12 @@ function conn(){
       if(ev.type==="delta"&&ev.kind==="text"){let d=log.querySelector("[data-live]");if(!d){d=addLine("m","");d.dataset.live="1"}d.textContent+=ev.text;log.scrollTop=log.scrollHeight}
       else if(ev.type==="tool")addLine("tool "+(ev.status==="run"?"":ev.status),(ev.status==="run"?"→ ":"")+(ev.name||"")+" "+(ev.summary||ev.text||""));
       else if(ev.type==="note")addLine("m",ev.text);
-      else if(ev.type==="turn"){const d=log.querySelector("[data-live]");if(d)delete d.dataset.live}
+      else if(ev.type==="diff"){const p=el("pre","diff",(ev.verdict?ev.verdict+"\\n":"")+ev.text);log.appendChild(p);log.scrollTop=log.scrollHeight}
+      else if(ev.type==="turn"){const d=log.querySelector("[data-live]");if(d){delete d.dataset.live;drawVisuals(d)}}
     }
+    else if(m.type==="devices"){devices=m.list||[];paint()}
+    else if(m.type==="usage"){usage=m.usage;paint()}
+    else if(m.type==="shot"&&m.png){const img=document.createElement("img");img.alt="device";img.src="data:image/png;base64,"+m.png;img.style.maxWidth="280px";img.style.borderRadius="10px";log.appendChild(img)}
   };
   ws.onclose=()=>setTimeout(conn,1200);
 }
@@ -413,8 +481,15 @@ conn();
 box.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();document.getElementById("dock").requestSubmit()}});
 document.getElementById("dock").onsubmit=e=>{e.preventDefault();const v=box.value.trim();if(!v||!ws)return;box.value="";
   if(e.submitter&&e.submitter.id!=="send"){ws.send(JSON.stringify({type:"queue-add",text:v}));return}
-  const eng=document.getElementById("engine").value;ws.send(JSON.stringify({type:"prompt",thread:active,text:v,engine:eng,command:document.getElementById("agentcmd").value}))};
+  const eng=document.getElementById("engine").value;ws.send(JSON.stringify({type:"prompt",thread:active,text:v,engine:eng,command:document.getElementById("agentcmd").value,file:attached}));attached=null;attach.textContent="Attach"};
 document.getElementById("engine").onchange=function(){document.getElementById("agentcmd").style.display=this.value==="agent"?"":"none"};
 const queueBtn=el("button",null,"Queue");queueBtn.type="button";queueBtn.onclick=()=>{const v=box.value.trim();if(!v)return;box.value="";ws.send(JSON.stringify({type:"queue-add",text:v}))};
-document.getElementById("dock").appendChild(queueBtn);
+const mic=el("button",null,"Speak");mic.type="button";mic.title="Dictation stays in this browser. rcode never receives the audio.";
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR)mic.disabled=true;else mic.onclick=()=>{const r=new SR();r.onresult=ev=>{box.value=(box.value+" "+ev.results[0][0].transcript).trim()};r.onend=()=>{mic.textContent="Speak"};mic.textContent="Listening…";r.start()};
+const file=document.createElement("input");file.type="file";file.accept="text/*,.md,.json,.ts,.tsx,.py,.go,.rs,.txt,.csv";
+const attach=el("button",null,"Attach");attach.type="button";attach.onclick=()=>file.click();
+file.onchange=()=>{const f=file.files&&file.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{attached={name:f.name,text:String(rd.result||"")};attach.textContent=f.name.slice(0,18)};rd.readAsText(f)};
+const quote=el("button",null,"Quote");quote.type="button";quote.onclick=()=>{const lines=[...log.querySelectorAll(".m:not(.you)")];const last=lines[lines.length-1];if(!last)return;box.value="> "+last.childNodes[0]&&last.childNodes[0].textContent?last.childNodes[0].textContent.trim().split("\\n").join("\\n> "):last.textContent.trim().split("\\n").join("\\n> ");box.value+="\\n"};
+document.getElementById("dock").append(queueBtn,mic,attach,file,quote);
 </script></body></html>`;

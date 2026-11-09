@@ -33,7 +33,7 @@ Usage:
   rcode login <provider> [key]   Store an API key (anthropic, openai, google, openrouter, telegram, …)
   rcode update                   Update to the latest release (compiled binary)
   rcode gateway                  Talk to rcode from your phone: Telegram + web UI (pair/install/uninstall)
-  rcode center                   Local command center: threads, mission queue, live tools, receipts
+  rcode center [--lan]           Local command center: threads, missions, receipts. --lan shares it on your network
   rcode eval <suite.json>        Run a deterministic eval suite (Wilson 95% CI)
   rcode handoff [file]           Print a resume brief (or write it when a path is given)
   rcode queue [add|run|list]     Queue tasks and work through them unattended (survives crashes)
@@ -76,7 +76,7 @@ async function main() {
       continue: { type: "boolean", short: "c" }, resume: { type: "string", short: "r" },
       plan: { type: "boolean" }, yes: { type: "boolean", short: "y" }, "auto-edit": { type: "boolean" },
       tools: { type: "string" }, minimal: { type: "boolean" }, plain: { type: "boolean" }, "no-session": { type: "boolean" },
-      user: { type: "boolean" }, cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
+      user: { type: "boolean" }, cwd: { type: "string" }, port: { type: "string" }, host: { type: "string" }, lan: { type: "boolean" }, "no-web": { type: "boolean" }, quiet: { type: "boolean", short: "q" }, refresh: { type: "boolean" },
       version: { type: "boolean", short: "v" }, help: { type: "boolean", short: "h" },
     },
   });
@@ -89,7 +89,7 @@ async function main() {
   const sub = positionals[0];
   if (sub === "center" && !values.print) {
     const { runCenter } = await import("./modes/center.ts");
-    return runCenter({ cwd, port: values.port ? Number(values.port) : undefined, host: values.host as string | undefined, model: values.model as string | undefined });
+    return runCenter({ cwd, port: values.port ? Number(values.port) : undefined, host: (values.host as string | undefined) ?? (values.lan ? "0.0.0.0" : undefined), model: values.model as string | undefined });
   }
   if (sub === "queue" && !values.print) {
     const { runQueue } = await import("./modes/queue.ts");

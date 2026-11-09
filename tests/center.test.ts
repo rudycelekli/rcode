@@ -28,6 +28,11 @@ describe("command center", () => {
       expect(page).toContain("Missions");
       expect(page).toContain("Claude plan");
       expect(page).toContain("Codex plan");
+      expect(page).toContain("Speak");
+      expect(page).toContain("Undo");
+      expect(page).toContain("manifest.webmanifest");
+      const manifest = await (await fetch(`http://127.0.0.1:${c.port}/manifest.webmanifest`)).json();
+      expect(manifest.display).toBe("standalone");
       const ws = new WebSocket(`ws://127.0.0.1:${c.port}/ws?token=${c.token}`);
       const ready = once(ws, "ready");
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
@@ -35,6 +40,8 @@ describe("command center", () => {
       expect(hello.cwd).toBe(cwd);
       expect(hello.jobs).toEqual([]);
       expect(hello.models).toContain("claude-cli/sonnet");
+      expect(hello.lan).toEqual([]);
+      expect(hello.usage).toBeDefined();
       const queued = once(ws, "queue");
       ws.send(JSON.stringify({ type: "queue-add", text: "rename the photos by date" }));
       const q = await queued;
